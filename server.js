@@ -1,6 +1,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 const { URL } = require("url");
 
 const ROOT_DIR = __dirname;
@@ -8,12 +9,16 @@ const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const DB_PATH = path.join(DATA_DIR, "schedules.json");
 const NAMES_PATH = path.join(ROOT_DIR, "names.json");
+const AUTH_PATH = path.join(ROOT_DIR, "auth.json");
 const PORT = Number(process.env.PORT || 3000);
 const TIME_ZONE = "Asia/Seoul";
 const MIN_ALLOWED_MINUTES = 15 * 60;
 const MAX_ALLOWED_MINUTES = 24 * 60;
 const ROOM_NUMBERS = Array.from({ length: 15 }, (_, index) => String(201 + index));
 const SLOT_NUMBERS = [1, 2, 3, 4];
+const SESSION_COOKIE_NAME = "gisook_session";
+const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const authSessions = new Map();
 
 const WEEKDAYS = [
   { key: "MON", label: "월", intl: "Mon" },
@@ -87,6 +92,54 @@ async function handleRequest(req, res) {
 }
 
 async function handleApiRequest(req, res, pathname) {
+  if (req.method === "GET" && pathname === "/api/auth/status") {
+    sendJson(res, 200, {
+      authenticated: isAuthenticatedRequest(req),
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/login") {
+    const payload = await readJsonBody(req);
+    const password = String(payload?.password || "");
+    if (password !== readAuthConfig().password) {
+      throwHttpError(401, "비밀번호가 올바르지 않습니다.");
+    }
+
+    const token = createSessionToken();
+    authSessions.set(token, Date.now() + SESSION_TTL_MS);
+    sendJson(
+      res,
+      200,
+      {
+        authenticated: true,
+      },
+      {
+        "Set-Cookie": serializeSessionCookie(token),
+      },
+    );
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/logout") {
+    clearSession(req);
+    sendJson(
+      res,
+      200,
+      {
+        authenticated: false,
+      },
+      {
+        "Set-Cookie": expireSessionCookie(),
+      },
+    );
+    return;
+  }
+
+  if (!isAuthenticatedRequest(req)) {
+    throwHttpError(401, "비밀번호를 입력해야 접근할 수 있습니다.");
+  }
+
   if (req.method === "GET" && pathname === "/api/config") {
     sendJson(res, 200, {
       people: readRoster(),
@@ -155,6 +208,10 @@ function bootstrapFiles() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
+  if (!fs.existsSync(AUTH_PATH)) {
+    fs.writeFileSync(AUTH_PATH, JSON.stringify(getDefaultAuthDocument(), null, 2));
+  }
+
   if (!fs.existsSync(NAMES_PATH)) {
     fs.writeFileSync(NAMES_PATH, JSON.stringify(getDefaultRosterDocument(), null, 2));
   }
@@ -163,6 +220,86 @@ function bootstrapFiles() {
     const roster = normalizeRosterDocument(getDefaultRosterDocument());
     fs.writeFileSync(DB_PATH, JSON.stringify(createEmptyDatabase(roster), null, 2));
   }
+}
+
+function getDefaultAuthDocument() {
+  return {
+    password: "3141",
+  };
+}
+
+function readAuthConfig() {
+  const raw = readJsonFile(AUTH_PATH);
+  return {
+    password: String(raw?.password || "3141"),
+  };
+}
+
+function createSessionToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+function isAuthenticatedRequest(req) {
+  cleanupExpiredSessions();
+  const cookies = parseCookies(req.headers.cookie || "");
+  const token = cookies[SESSION_COOKIE_NAME];
+  if (!token) {
+    return false;
+  }
+
+  const expiresAt = authSessions.get(token);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    authSessions.delete(token);
+    return false;
+  }
+
+  authSessions.set(token, Date.now() + SESSION_TTL_MS);
+  return true;
+}
+
+function clearSession(req) {
+  const cookies = parseCookies(req.headers.cookie || "");
+  const token = cookies[SESSION_COOKIE_NAME];
+  if (token) {
+    authSessions.delete(token);
+  }
+}
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [token, expiresAt] of authSessions.entries()) {
+    if (expiresAt <= now) {
+      authSessions.delete(token);
+    }
+  }
+}
+
+function parseCookies(headerValue) {
+  return String(headerValue || "")
+    .split(";")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .reduce((accumulator, chunk) => {
+      const separatorIndex = chunk.indexOf("=");
+      if (separatorIndex === -1) {
+        return accumulator;
+      }
+
+      const key = chunk.slice(0, separatorIndex).trim();
+      const value = chunk.slice(separatorIndex + 1).trim();
+      accumulator[key] = decodeURIComponent(value);
+      return accumulator;
+    }, {});
+}
+
+function serializeSessionCookie(token) {
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${Math.floor(
+    SESSION_TTL_MS / 1000,
+  )}; SameSite=Lax`;
+}
+
+function expireSessionCookie() {
+  return `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 function buildUserResponse(userName) {
@@ -872,8 +1009,11 @@ function timeToMinutes(timeString) {
   return hours * 60 + minutes;
 }
 
-function sendJson(res, statusCode, payload) {
-  res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+function sendJson(res, statusCode, payload, extraHeaders = {}) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...extraHeaders,
+  });
   res.end(JSON.stringify(payload));
 }
 

@@ -7,12 +7,22 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div id="authGate" class="auth-gate">
+      <div class="auth-box">
+        <div class="auth-title">비밀번호 입력</div>
+        <input id="passwordInput" type="password" placeholder="비밀번호" autocomplete="current-password" />
+        <button id="loginButton" type="button">입장</button>
+        <div id="authMessage" class="auth-message"></div>
+      </div>
+    </div>
+
+    <div id="appShell" class="app-shell hidden">
       <div class="top-row">
         <input id="nameInput" list="nameSuggestions" placeholder="이름" autocomplete="off" />
         <datalist id="nameSuggestions"></datalist>
         <button id="loadUserButton" type="button">불러오기</button>
         <button id="saveUserButton" type="button">저장</button>
+        <button id="logoutButton" type="button">로그아웃</button>
       </div>
 
       <div class="tabs">

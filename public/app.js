@@ -12,6 +12,7 @@ const MAX_ALLOWED_MINUTES = 24 * 60;
 const AUTOSAVE_DELAY_MS = 400;
 
 const state = {
+  authenticated: false,
   people: [],
   selectedName: "",
   selectedRoom: "",
@@ -24,6 +25,7 @@ const state = {
   saveTimerId: null,
   saveRequestToken: 0,
   hasUnsavedChanges: false,
+  refreshTimerId: null,
 };
 
 const elements = {};
@@ -35,6 +37,12 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function cacheElements() {
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
   elements.nameInput = document.querySelector("#nameInput");
   elements.nameSuggestions = document.querySelector("#nameSuggestions");
   elements.loadUserButton = document.querySelector("#loadUserButton");
@@ -63,6 +71,15 @@ function cacheElements() {
 }
 
 function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
   elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
   elements.saveUserButton.addEventListener("click", () => saveUser());
 
@@ -1136,4 +1153,328 @@ function debounce(callback, wait) {
     window.clearTimeout(timerId);
     timerId = window.setTimeout(() => callback(...args), wait);
   };
+}
+
+async function fetchJson(url, fetchOptions = {}, options = {}) {
+  const response = await fetch(url, fetchOptions);
+  let payload = {};
+
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    payload = {};
+  }
+
+  if (!response.ok) {
+    const message = payload.message || "요청에 실패했습니다.";
+    if (response.status === 401 && !options.allowUnauthorized) {
+      handleUnauthorized(message);
+    }
+    throw new Error(message);
+  }
+
+  return payload;
+}
+
+function setAuthMessage(message) {
+  elements.authMessage.textContent = message || "";
+}
+
+function clearAuthMessage() {
+  setAuthMessage("");
+}
+
+function showAuthGate() {
+  state.authenticated = false;
+  elements.authGate.classList.remove("hidden");
+  elements.appShell.classList.add("hidden");
+  elements.passwordInput.focus();
+}
+
+function showAppShell() {
+  elements.authGate.classList.add("hidden");
+  elements.appShell.classList.remove("hidden");
+}
+
+function handleUnauthorized(message) {
+  state.authenticated = false;
+  cancelAutoSave();
+  setAuthMessage(message || "비밀번호를 입력해야 접근할 수 있습니다.");
+  showAuthGate();
+}
+
+async function restoreSession() {
+  try {
+    const payload = await fetchJson("/api/auth/status", {}, { allowUnauthorized: true });
+    if (!payload.authenticated) {
+      showAuthGate();
+      return;
+    }
+
+    await finishLogin();
+  } catch (error) {
+    showAuthGate();
+    setAuthMessage(error.message);
+  }
+}
+
+async function finishLogin() {
+  state.authenticated = true;
+  showAppShell();
+  await loadProtectedData();
+}
+
+async function loadProtectedData() {
+  const payload = await fetchJson("/api/config");
+
+  state.people = payload.people || [];
+  renderNameOptions();
+
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    state.people.find((person) => person.name === savedName)?.name || state.people[0]?.name || "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+    }, 30000);
+  }
+}
+
+async function login() {
+  const password = String(elements.passwordInput.value || "").trim();
+  if (!password) {
+    setAuthMessage("비밀번호를 입력하세요.");
+    return;
+  }
+
+  try {
+    await fetchJson(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password }),
+      },
+      { allowUnauthorized: true },
+    );
+
+    elements.passwordInput.value = "";
+    clearAuthMessage();
+    await finishLogin();
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" }, { allowUnauthorized: true });
+  } catch (_error) {
+    // Ignore logout failures and clear the local view anyway.
+  }
+
+  state.authenticated = false;
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage("로그아웃되었습니다.");
+}
+
+async function initialize() {
+  renderDayButtons();
+  renderScheduleRows();
+  renderOvernightRows();
+  renderChart();
+  clearMessage();
+  clearAuthMessage();
+  await restoreSession();
+}
+
+async function loadUser(name) {
+  if (!state.authenticated) {
+    handleUnauthorized("비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  const trimmedName = String(name || "").trim();
+  if (!trimmedName) {
+    setMessage("이름을 입력하세요.", true);
+    return;
+  }
+
+  cancelAutoSave();
+
+  try {
+    const payload = await fetchJson(`/api/users/${encodeURIComponent(trimmedName)}`);
+
+    state.selectedName = payload.name;
+    state.selectedRoom = payload.room || "";
+    state.selectedSlot = Number(payload.slot || 0);
+    state.intervals = (payload.intervals || []).map((interval) => ({
+      id: makeId(),
+      day: interval.day,
+      start: interval.start,
+      end: interval.end,
+      reason: interval.reason || "",
+      outing: interval.outing === "X" ? "X" : "O",
+      phone: interval.phone === "O" ? "O" : "X",
+    }));
+    state.overnights = normalizeOvernightsForUi(payload.overnights || []);
+    state.hasUnsavedChanges = false;
+
+    elements.nameInput.value = payload.name;
+    localStorage.setItem("selectedName", payload.name);
+
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+    clearMessage();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function saveUser(options = {}) {
+  if (!state.authenticated) {
+    handleUnauthorized("비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  const { isAuto = false, keepalive = false } = options;
+  const name = state.selectedName || getSelectedNameInput();
+  if (!name) {
+    setMessage("이름을 입력하세요.", true);
+    return;
+  }
+
+  syncOvernightsFromDom();
+  state.selectedName = name;
+  state.hasUnsavedChanges = true;
+
+  const requestToken = ++state.saveRequestToken;
+
+  try {
+    if (isAuto) {
+      setMessage("자동 저장 중...");
+    }
+
+    const payload = await fetchJson(`/api/users/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        intervals: state.intervals.map((interval) => ({
+          day: interval.day,
+          start: interval.start,
+          end: interval.end,
+          reason: interval.reason || "",
+          outing: interval.outing === "X" ? "X" : "O",
+          phone: interval.phone === "O" ? "O" : "X",
+        })),
+        overnights: state.overnights
+          .filter((overnight) => String(overnight.reason || "").trim())
+          .map((overnight) => ({
+            day: overnight.day,
+            reason: overnight.reason || "",
+          })),
+      }),
+      keepalive,
+    });
+
+    if (requestToken !== state.saveRequestToken) {
+      return;
+    }
+
+    state.selectedName = payload.name;
+    state.selectedRoom = payload.room || "";
+    state.selectedSlot = Number(payload.slot || 0);
+    elements.nameInput.value = payload.name;
+    localStorage.setItem("selectedName", payload.name);
+
+    if (!isAuto) {
+      state.intervals = (payload.intervals || []).map((interval) => ({
+        id: makeId(),
+        day: interval.day,
+        start: interval.start,
+        end: interval.end,
+        reason: interval.reason || "",
+        outing: interval.outing === "X" ? "X" : "O",
+        phone: interval.phone === "O" ? "O" : "X",
+      }));
+      state.overnights = normalizeOvernightsForUi(payload.overnights || []);
+      renderScheduleRows();
+      renderOvernightRows();
+    }
+
+    state.hasUnsavedChanges = false;
+    setMessage(isAuto ? "자동 저장됨" : "저장됨");
+    renderChart();
+    await refreshDashboard();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function queueAutoSave() {
+  if (!state.authenticated || !state.selectedName) {
+    return;
+  }
+
+  state.hasUnsavedChanges = true;
+  cancelAutoSave();
+  setMessage("자동 저장 대기 중...");
+  state.saveTimerId = window.setTimeout(() => {
+    state.saveTimerId = null;
+    saveUser({ isAuto: true });
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function flushPendingSaveOnPageHide() {
+  if (!state.authenticated || !state.selectedName || !state.hasUnsavedChanges) {
+    return;
+  }
+
+  cancelAutoSave();
+  saveUser({ isAuto: true, keepalive: true });
+}
+
+async function refreshDashboard() {
+  if (!state.authenticated) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/dashboard");
+    state.dashboardRooms = payload.rooms || [];
+    elements.summaryLine.textContent =
+      `전체 ${payload.totals.total} / 재실 ${payload.totals.present} / 외출 ${payload.totals.out} / 폰 ${payload.totals.phone} / 외박 ${payload.totals.overnight}`;
+    renderDashboardBoard();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "gisook",
+  "version": "1.0.0",
+  "description": "Local outing status board",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --check server.js && node --check public/app.js"
+  }
+}

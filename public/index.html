@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>입사생 현황</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="top-row">
+        <input id="nameInput" list="nameSuggestions" placeholder="이름" autocomplete="off" />
+        <datalist id="nameSuggestions"></datalist>
+        <button id="loadUserButton" type="button">불러오기</button>
+        <button id="saveUserButton" type="button">저장</button>
+      </div>
+
+      <div class="tabs">
+        <button id="settingsTabButton" class="tab-button is-active" type="button">설정</button>
+        <button id="overnightTabButton" class="tab-button" type="button">외박</button>
+        <button id="dashboardTabButton" class="tab-button" type="button">현황</button>
+      </div>
+
+      <section id="settingsTab" class="tab-panel is-active">
+        <div id="dayTabs" class="day-tabs">
+          <button class="day-button" type="button" data-day="MON">월</button>
+          <button class="day-button" type="button" data-day="TUE">화</button>
+          <button class="day-button" type="button" data-day="WED">수</button>
+          <button class="day-button" type="button" data-day="THU">목</button>
+          <button class="day-button" type="button" data-day="FRI">금</button>
+        </div>
+
+        <div class="actions">
+          <button id="addRowButton" type="button">행 추가</button>
+          <button id="clearRowsButton" type="button">초기화</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>나감</th>
+                <th>들어옴</th>
+                <th>외출</th>
+                <th>폰</th>
+                <th>사유</th>
+                <th>삭제</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleRows"></tbody>
+          </table>
+        </div>
+
+        <div id="chartContainer" class="chart-container"></div>
+      </section>
+
+      <section id="overnightTab" class="tab-panel">
+        <div class="actions">
+          <button id="clearOvernightButton" type="button">초기화</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>요일</th>
+                <th>사유</th>
+                <th>취소</th>
+              </tr>
+            </thead>
+            <tbody id="overnightRows"></tbody>
+          </table>
+        </div>
+
+        <div id="overnightChartContainer" class="chart-container"></div>
+      </section>
+
+      <section id="dashboardTab" class="tab-panel">
+        <div id="summaryLine"></div>
+        <div id="dashboardBoard" class="dashboard-board"></div>
+      </section>
+
+      <div id="messageBox" class="message-box hidden"></div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

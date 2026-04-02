@@ -32,10 +32,52 @@ const state = {
 const elements = {};
 
 document.addEventListener("DOMContentLoaded", () => {
+  renderAuthNameOptions = renderPatchedAuthNameOptions;
   cacheElements();
+  elements.authNamePicker = document.querySelector("#authNamePicker");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.authNameToggleButton = document.querySelector("#authNameToggleButton");
+  elements.authNameMenu = document.querySelector("#authNameMenu");
   bindEvents();
+  bindPatchedAuthNameEvents();
   initialize();
 });
+
+function bindPatchedAuthNameEvents() {
+  elements.authNameInput.addEventListener("focus", () => openAuthNameMenu(true));
+  elements.authNameInput.addEventListener("click", () => openAuthNameMenu(true));
+  elements.authNameInput.addEventListener("input", handleAuthNameInput);
+  elements.authNameInput.addEventListener("keydown", handleAuthNameInputKeydown);
+  elements.authNameToggleButton.addEventListener("click", toggleAuthNameMenu);
+  elements.authNameMenu.addEventListener("click", handleAuthNameMenuClick);
+  document.addEventListener("click", handleDocumentClick);
+}
+
+function renderPatchedAuthNameOptions() {
+  const options = [];
+  if (state.wardenName) {
+    options.push(state.wardenName);
+  }
+
+  for (const name of [...state.authNames].sort((left, right) => left.localeCompare(right, "ko"))) {
+    if (!options.includes(name)) {
+      options.push(name);
+    }
+  }
+
+  elements.authNameMenu.innerHTML = [
+    ...options.map(
+      (name) =>
+        `<button type="button" class="auth-name-option" data-auth-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`,
+    ),
+    '<div class="auth-name-empty hidden">검색 결과가 없습니다.</div>',
+  ].join("");
+
+  const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
+  const nextName = options.includes(savedName) ? savedName : options[0] || "";
+  elements.authNameInput.value = nextName;
+  closeAuthNameMenu();
+}
 
 function cacheElements() {
   elements.authGate = document.querySelector("#authGate");
@@ -158,7 +200,7 @@ async function initialize() {
       throw new Error(payload.message || "설정을 불러오지 못했습니다.");
     }
 
-    state.people = payload.people || [];
+    state.people = Array.isArray(payload.people) ? payload.people : [];
     renderNameOptions();
 
     const savedName = localStorage.getItem("selectedName");
@@ -593,18 +635,17 @@ async function refreshDashboard() {
 
 function renderDashboardBoard() {
   const visibleRooms = getFilteredDashboardRooms();
-  const leftRooms = visibleRooms.filter((room) => Number(room.room) <= 207);
-  const rightRooms = visibleRooms.filter((room) => Number(room.room) >= 208);
-  elements.dashboardBoard.innerHTML = `
-    <div class="board-column">${leftRooms.map(renderRoomCard).join("")}</div>
-    <div class="board-column">${rightRooms.map(renderRoomCard).join("")}</div>
-  `;
+  elements.dashboardBoard.innerHTML = visibleRooms.map(renderRoomCard).join("");
 }
 
 function renderRoomCard(room) {
   return `
     <div class="room-card">
       <div class="room-title">${escapeHtml(room.room)}</div>
+      <div class="room-slot room-slot-header">
+        <div class="slot-number">학년</div>
+        <div class="slot-name-wrap">이름</div>
+      </div>
       ${room.occupants.map(renderRoomSlot).join("")}
     </div>
   `;
@@ -739,6 +780,7 @@ function renderChart() {
   const rowHeight = 68;
   const chartBottom = margin.top + rowHeight * WEEKDAYS.length;
   const now = getCurrentSeoulTimeParts();
+  const todayDayKey = getCurrentSeoulWeekdayKey();
   const nowMinutes = Number(now.hour) * 60 + Number(now.minute);
   const nowX = margin.left + (nowMinutes / 1440) * innerWidth;
   const nowLabelX = Math.min(Math.max(nowX, margin.left + 40), width - margin.right - 40);
@@ -774,6 +816,8 @@ function renderChart() {
     .map((day, index) => {
       const y = margin.top + index * rowHeight;
       const guideY = y + 33;
+      const dayLabelFill = day.key === todayDayKey ? "#0057d8" : "#111111";
+      const dayLabelWeight = day.key === todayDayKey ? "700" : "400";
       const overnightReason = day.overnights
         .map((overnight) => String(overnight.reason || "").trim())
         .filter(Boolean)
@@ -817,7 +861,7 @@ function renderChart() {
 
       return `
         <line x1="${margin.left}" y1="${guideY}" x2="${width - margin.right}" y2="${guideY}" stroke="#eeeeee"></line>
-        <text x="${margin.left - 12}" y="${y + 37}" text-anchor="end" fill="#111111">${day.label}</text>
+        <text x="${margin.left - 12}" y="${y + 37}" text-anchor="end" fill="${dayLabelFill}" font-weight="${dayLabelWeight}">${day.label}</text>
         ${blocks}
       `;
     })
@@ -1203,13 +1247,7 @@ function isBlockedInterval(startTime, endTime) {
 }
 
 function setMessage(message, isError = false) {
-  if (!message) {
-    clearMessage();
-    return;
-  }
-
-  elements.messageBox.textContent = message;
-  elements.messageBox.className = isError ? "message-box error" : "message-box";
+  clearMessage();
 }
 
 function clearMessage() {
@@ -1256,11 +1294,13 @@ async function fetchJson(url, fetchOptions = {}, options = {}) {
 }
 
 function setAuthMessage(message) {
-  elements.authMessage.textContent = message || "";
+  elements.authMessage.textContent = "";
+  elements.authMessage.classList.add("hidden");
 }
 
 function clearAuthMessage() {
-  setAuthMessage("");
+  elements.authMessage.textContent = "";
+  elements.authMessage.classList.add("hidden");
 }
 
 function showAuthGate() {
@@ -1306,7 +1346,7 @@ async function finishLogin() {
 async function loadProtectedData() {
   const payload = await fetchJson("/api/config");
 
-  state.people = payload.people || [];
+  state.people = Array.isArray(payload.people) ? payload.people : [];
   renderNameOptions();
 
   const savedName = localStorage.getItem("selectedName");
@@ -1589,7 +1629,10 @@ function cacheElements() {
 
   elements.authGate = document.querySelector("#authGate");
   elements.appShell = document.querySelector("#appShell");
+  elements.authNamePicker = document.querySelector("#authNamePicker");
   elements.authNameInput = document.querySelector("#authNameInput");
+  elements.authNameToggleButton = document.querySelector("#authNameToggleButton");
+  elements.authNameMenu = document.querySelector("#authNameMenu");
   elements.passwordInput = document.querySelector("#passwordInput");
   elements.loginButton = document.querySelector("#loginButton");
   elements.logoutButton = document.querySelector("#logoutButton");
@@ -1723,6 +1766,109 @@ function bindEvents() {
   window.addEventListener("pagehide", flushPendingSaveOnPageHide);
 }
 
+function persistAuthSelectedName() {
+  localStorage.setItem("authSelectedName", String(elements.authNameInput.value || "").trim());
+}
+
+function openAuthNameMenu(showAll = false) {
+  filterAuthNameOptions(showAll ? "" : elements.authNameInput.value);
+  elements.authNamePicker.classList.add("is-open");
+  elements.authNameMenu.classList.remove("hidden");
+  elements.authNameToggleButton.setAttribute("aria-expanded", "true");
+}
+
+function closeAuthNameMenu() {
+  elements.authNamePicker.classList.remove("is-open");
+  elements.authNameMenu.classList.add("hidden");
+  elements.authNameToggleButton.setAttribute("aria-expanded", "false");
+}
+
+function toggleAuthNameMenu(event) {
+  event.preventDefault();
+  if (elements.authNameMenu.classList.contains("hidden")) {
+    elements.authNameInput.focus();
+    openAuthNameMenu(true);
+    return;
+  }
+
+  closeAuthNameMenu();
+}
+
+function handleAuthNameInput() {
+  openAuthNameMenu(false);
+}
+
+function handleAuthNameInputKeydown(event) {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    openAuthNameMenu(true);
+    return;
+  }
+
+  if (event.key === "Escape") {
+    closeAuthNameMenu();
+    return;
+  }
+
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  const firstVisibleOption = getFirstVisibleAuthNameOption();
+  if (!firstVisibleOption) {
+    return;
+  }
+
+  event.preventDefault();
+  selectAuthName(firstVisibleOption.dataset.authName || "");
+}
+
+function handleAuthNameMenuClick(event) {
+  const option = event.target.closest("[data-auth-name]");
+  if (!option) {
+    return;
+  }
+
+  selectAuthName(option.dataset.authName || "");
+}
+
+function handleDocumentClick(event) {
+  if (elements.authNamePicker.contains(event.target)) {
+    return;
+  }
+
+  closeAuthNameMenu();
+}
+
+function getFirstVisibleAuthNameOption() {
+  return Array.from(elements.authNameMenu.querySelectorAll(".auth-name-option")).find((option) => !option.hidden) || null;
+}
+
+function filterAuthNameOptions(rawQuery) {
+  const query = String(rawQuery || "").trim();
+  let hasVisibleOption = false;
+  for (const option of elements.authNameMenu.querySelectorAll(".auth-name-option")) {
+    const matches = !query || String(option.dataset.authName || "").includes(query);
+    option.hidden = !matches;
+    option.classList.toggle("is-active", !hasVisibleOption && matches);
+    if (matches && !hasVisibleOption) {
+      hasVisibleOption = true;
+    }
+  }
+
+  const emptyState = elements.authNameMenu.querySelector(".auth-name-empty");
+  if (emptyState) {
+    emptyState.classList.toggle("hidden", hasVisibleOption);
+  }
+}
+
+function selectAuthName(name) {
+  elements.authNameInput.value = name;
+  persistAuthSelectedName();
+  closeAuthNameMenu();
+  elements.passwordInput.focus();
+}
+
 function renderAuthNameOptions() {
   const options = [];
   if (state.wardenName) {
@@ -1734,13 +1880,18 @@ function renderAuthNameOptions() {
     }
   }
 
-  elements.authNameInput.innerHTML = options
-    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-    .join("");
+  elements.authNameMenu.innerHTML = [
+    ...options.map(
+      (name) =>
+        `<button type="button" class="auth-name-option" data-auth-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`,
+    ),
+    '<div class="auth-name-empty hidden">검색 결과가 없습니다.</div>',
+  ].join("");
 
   const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
   const nextName = options.includes(savedName) ? savedName : options[0] || "";
   elements.authNameInput.value = nextName;
+  closeAuthNameMenu();
 }
 
 async function loadAuthOptions() {
@@ -1817,6 +1968,8 @@ function applyRoleMode() {
 
   if (!isWarden && state.activeTab === "admin") {
     switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
   }
 
   renderMessagesScope();
@@ -1896,7 +2049,7 @@ async function sendWardenMessage() {
     });
     elements.wardenMessageInput.value = "";
     await loadMessages();
-    setMessage("사감문자를 보냈습니다.");
+    setMessage("사감쪽지를 보냈습니다.");
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -1960,7 +2113,7 @@ async function loadProtectedData() {
 
   state.userRole = payload.role || state.userRole || "student";
   state.loginName = payload.loginName || state.loginName || "";
-  state.people = payload.people || [];
+  state.people = Array.isArray(payload.people) ? payload.people : [];
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -2007,6 +2160,1365 @@ async function loadProtectedData() {
     }, 30000);
   }
 }
+
+function populateAdminControls() {
+  const roomFilterInput = document.querySelector("#adminRoomFilterInput");
+  if (!roomFilterInput) {
+    return;
+  }
+
+  const currentRoom = String(roomFilterInput.value || "").trim();
+  roomFilterInput.innerHTML = [
+    '<option value="">전체 호실</option>',
+    ...(state.roomChoices || []).map(
+      (room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}</option>`,
+    ),
+  ].join("");
+  roomFilterInput.value = (state.roomChoices || []).includes(currentRoom) ? currentRoom : "";
+}
+
+function getFilteredAdminPeople() {
+  const searchQuery = String(document.querySelector("#adminSearchInput")?.value || "").trim();
+  const roomFilter = String(document.querySelector("#adminRoomFilterInput")?.value || "").trim();
+  const gradeFilter = String(document.querySelector("#adminGradeFilterInput")?.value || "").trim();
+
+  return [...state.people]
+    .sort((left, right) => {
+      if (left.room !== right.room) {
+        return left.room.localeCompare(right.room);
+      }
+      if (Number(left.slot) !== Number(right.slot)) {
+        return Number(left.slot) - Number(right.slot);
+      }
+      return left.name.localeCompare(right.name, "ko");
+    })
+    .filter((person) => {
+      if (roomFilter && person.room !== roomFilter) {
+        return false;
+      }
+      if (gradeFilter && String(person.grade ?? "") !== gradeFilter) {
+        return false;
+      }
+      if (searchQuery && !person.name.includes(searchQuery)) {
+        return false;
+      }
+      return true;
+    });
+}
+
+function renderAdminRoomSelectOptions(selectedRoom) {
+  return (state.roomChoices || [])
+    .map(
+      (room) =>
+        `<option value="${escapeHtml(room)}"${room === selectedRoom ? " selected" : ""}>${escapeHtml(room)}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminGradeSelectOptions(selectedGrade) {
+  return [1, 2, 3]
+    .map(
+      (grade) =>
+        `<option value="${grade}"${Number(selectedGrade) === grade ? " selected" : ""}>${grade}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input admin-profile-name-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              placeholder="이름"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" data-admin-profile-save="${escapeHtml(person.name)}">저장</button>
+              <button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(window.prompt("추가할 학생 이름을 입력하세요.", "") || "").trim();
+  if (!name) {
+    return;
+  }
+
+  const defaultRoom = String(state.roomChoices?.[0] || "");
+  const room = String(window.prompt("호실을 입력하세요.", defaultRoom) || "").trim();
+  if (!room) {
+    return;
+  }
+
+  const gradeText = String(window.prompt("학년을 입력하세요. (1, 2, 3)", "1") || "").trim();
+  if (!gradeText) {
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        room,
+        grade: Number(gradeText),
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentAction(event) {
+  const saveButton = event.target.closest("[data-admin-profile-save]");
+  if (saveButton) {
+    const originalName = String(saveButton.dataset.adminProfileSave || "").trim();
+    const row = saveButton.closest("[data-admin-name]");
+    if (!originalName || !row) {
+      return;
+    }
+
+    updateStudentByName(originalName, row);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function updateStudentByName(originalName, row) {
+  const nextName = String(row.querySelector("[data-admin-profile-name]")?.value || "").trim();
+  const nextRoom = String(row.querySelector("[data-admin-profile-room]")?.value || "").trim();
+  const nextGrade = Number(row.querySelector("[data-admin-profile-grade]")?.value || 0);
+
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(originalName)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: nextName,
+        room: nextRoom,
+        grade: nextGrade,
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+// EOF inline-admin override anchor
+
+// Final inline admin edit overrides live below.
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (!elements.adminStudentRows) {
+    return;
+  }
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input admin-profile-name-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              placeholder="이름"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" class="admin-delete-button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function handleAdminStudentAction(event) {
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+function handleAdminStudentFieldChange(event) {
+  const row = event.target.closest("[data-admin-name]");
+  if (!row) {
+    return;
+  }
+
+  if (
+    event.target.matches("[data-admin-profile-name]") ||
+    event.target.matches("[data-admin-profile-room]") ||
+    event.target.matches("[data-admin-profile-grade]")
+  ) {
+    updateStudentByName(String(row.dataset.adminName || "").trim(), row);
+  }
+}
+
+function handleAdminStudentFieldKeydown(event) {
+  if (event.key !== "Enter" || !event.target.matches("[data-admin-profile-name]")) {
+    return;
+  }
+
+  event.preventDefault();
+  event.target.blur();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const adminStudentRows = document.querySelector("#adminStudentRows");
+  if (!adminStudentRows || adminStudentRows.dataset.inlineAdminEditBound === "1") {
+    return;
+  }
+
+  adminStudentRows.dataset.inlineAdminEditBound = "1";
+  adminStudentRows.addEventListener("change", handleAdminStudentFieldChange);
+  adminStudentRows.addEventListener("keydown", handleAdminStudentFieldKeydown);
+});
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (!elements.adminStudentRows) {
+    return;
+  }
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input admin-profile-name-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              placeholder="이름"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" class="admin-save-button" data-admin-profile-save="${escapeHtml(person.name)}">Save</button>
+              <button type="button" class="admin-delete-button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const rerenderAdminStudents = () => {
+    if (!elements.adminStudentRows) {
+      return;
+    }
+
+    renderAdminStudentRows();
+  };
+
+  document.querySelector("#adminSearchInput")?.addEventListener("input", rerenderAdminStudents);
+  document.querySelector("#adminGradeFilterInput")?.addEventListener("change", rerenderAdminStudents);
+  document.querySelector("#adminRoomFilterInput")?.addEventListener("change", rerenderAdminStudents);
+});
+
+function getDashboardAttendanceScopeLabel() {
+  if (state.dashboardFilter === "GRADE_1") {
+    return "1학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_2") {
+    return "2학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_3") {
+    return "3학년";
+  }
+
+  if (state.dashboardFilter === "OUT") {
+    return "외출";
+  }
+
+  if (state.dashboardFilter === "OVERNIGHT") {
+    return "외박";
+  }
+
+  return "전체";
+}
+
+function isAttendanceUnavailableForOccupant(occupant) {
+  return Boolean(
+    occupant &&
+      !occupant.empty &&
+      (occupant.isOut || occupant.isPhoneOnly || occupant.isOvernight),
+  );
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+
+  if (state.dashboardAttendanceMode) {
+    const visibleUsers = getFilteredDashboardRooms()
+      .flatMap((room) => room.occupants)
+      .filter((occupant) => !occupant.empty);
+    const attendanceTargets = visibleUsers.filter((user) => !isAttendanceUnavailableForOccupant(user));
+    const attendanceCount = attendanceTargets.filter((user) => user.attendanceChecked).length;
+    elements.summaryLine.textContent = `${getDashboardAttendanceScopeLabel()} 출석 ${attendanceCount} / ${attendanceTargets.length}`;
+    return;
+  }
+
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
+}
+
+function canToggleAttendanceForOccupant(occupant) {
+  return (
+    state.dashboardAttendanceMode &&
+    state.userRole === "student" &&
+    !occupant.empty &&
+    !isAttendanceUnavailableForOccupant(occupant) &&
+    occupant.name === state.loginName
+  );
+}
+
+function renderRoomSlot(occupant) {
+  const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
+  const isAttendanceUnavailable = isAttendanceUnavailableForOccupant(occupant);
+  const statusClass = occupant.empty
+    ? "empty"
+    : isAttendanceMode
+      ? isAttendanceUnavailable
+        ? "attendance-disabled"
+        : occupant.attendanceChecked
+          ? "attendance-in"
+          : "attendance-out"
+      : occupant.isOvernight
+        ? "overnight"
+        : occupant.isOut
+          ? "out"
+          : occupant.isPhoneOnly
+            ? "phone"
+            : "in";
+
+  const popover = occupant.empty
+    ? ""
+    : occupant.isOvernight
+      ? `
+          <div class="dashboard-popover">
+            <div>외박</div>
+            <div>사유: ${escapeHtml(occupant.currentOvernight?.reason || "없음")}</div>
+          </div>
+        `
+      : occupant.isOut || occupant.isPhoneOnly
+        ? `
+            <div class="dashboard-popover">
+              <div>${escapeHtml(occupant.isOut ? "외출" : "폰")}</div>
+              <div>사유: ${escapeHtml(occupant.currentInterval?.reason || "없음")}</div>
+              <div>폰 ${escapeHtml(occupant.currentInterval?.phone || "X")}</div>
+            </div>
+          `
+        : "";
+
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
+  const nameLabel = occupant.empty ? "" : occupant.name;
+  const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
+  const canToggle = canToggleAttendanceForOccupant(occupant);
+  const nameMarkup = occupant.empty
+    ? `<div class="${nameClass}"></div>`
+    : canToggle
+      ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
+      : `<div class="${nameClass}">${escapeHtml(nameLabel)}</div>`;
+
+  return `
+    <div class="room-slot">
+      <div class="slot-number">${gradeLabel}</div>
+      <div class="${wrapClass}">
+        ${nameMarkup}
+        ${popover}
+      </div>
+    </div>
+  `;
+}
+
+function populateAdminControls() {
+  const roomFilterInput = document.querySelector("#adminRoomFilterInput");
+  if (!roomFilterInput) {
+    return;
+  }
+
+  const currentRoom = String(roomFilterInput.value || "").trim();
+  roomFilterInput.innerHTML = [
+    '<option value="">전체 호실</option>',
+    ...(state.roomChoices || []).map(
+      (room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}</option>`,
+    ),
+  ].join("");
+  roomFilterInput.value = (state.roomChoices || []).includes(currentRoom) ? currentRoom : "";
+}
+
+function getFilteredAdminPeople() {
+  const searchQuery = String(document.querySelector("#adminSearchInput")?.value || "").trim();
+  const roomFilter = String(document.querySelector("#adminRoomFilterInput")?.value || "").trim();
+  const gradeFilter = String(document.querySelector("#adminGradeFilterInput")?.value || "").trim();
+
+  return [...state.people]
+    .sort((left, right) => {
+      if (left.room !== right.room) {
+        return left.room.localeCompare(right.room);
+      }
+      if (Number(left.slot) !== Number(right.slot)) {
+        return Number(left.slot) - Number(right.slot);
+      }
+      return left.name.localeCompare(right.name, "ko");
+    })
+    .filter((person) => {
+      if (roomFilter && person.room !== roomFilter) {
+        return false;
+      }
+      if (gradeFilter && String(person.grade ?? "") !== gradeFilter) {
+        return false;
+      }
+      if (searchQuery && !person.name.includes(searchQuery)) {
+        return false;
+      }
+      return true;
+    });
+}
+
+function renderAdminRoomSelectOptions(selectedRoom) {
+  return (state.roomChoices || [])
+    .map(
+      (room) =>
+        `<option value="${escapeHtml(room)}"${room === selectedRoom ? " selected" : ""}>${escapeHtml(room)}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminGradeSelectOptions(selectedGrade) {
+  return [1, 2, 3]
+    .map(
+      (grade) =>
+        `<option value="${grade}"${Number(selectedGrade) === grade ? " selected" : ""}>${grade}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (!elements.adminStudentRows) {
+    return;
+  }
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" data-admin-profile-save="${escapeHtml(person.name)}">저장</button>
+              <button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(window.prompt("추가할 학생 이름을 입력하세요.", "") || "").trim();
+  if (!name) {
+    return;
+  }
+
+  const defaultRoom = String(state.roomChoices?.[0] || "");
+  const room = String(window.prompt("호실을 입력하세요.", defaultRoom) || "").trim();
+  if (!room) {
+    return;
+  }
+
+  const gradeText = String(window.prompt("학년을 입력하세요. (1, 2, 3)", "1") || "").trim();
+  if (!gradeText) {
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        room,
+        grade: Number(gradeText),
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentAction(event) {
+  const saveButton = event.target.closest("[data-admin-profile-save]");
+  if (saveButton) {
+    const originalName = String(saveButton.dataset.adminProfileSave || "").trim();
+    const row = saveButton.closest("[data-admin-name]");
+    if (!originalName || !row) {
+      return;
+    }
+
+    updateStudentByName(originalName, row);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function updateStudentByName(originalName, row) {
+  const nextName = String(row.querySelector("[data-admin-profile-name]")?.value || "").trim();
+  const nextRoom = String(row.querySelector("[data-admin-profile-room]")?.value || "").trim();
+  const nextGrade = Number(row.querySelector("[data-admin-profile-grade]")?.value || 0);
+
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(originalName)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: nextName,
+        room: nextRoom,
+        grade: nextGrade,
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function normalizeAdminDraftRoom(room) {
+  const normalizedRoom = String(room || "").trim();
+  if (state.roomChoices.includes(normalizedRoom)) {
+    return normalizedRoom;
+  }
+
+  for (const candidate of state.roomChoices) {
+    const occupancy = state.people.filter((person) => person.room === candidate).length;
+    if (occupancy < 4) {
+      return candidate;
+    }
+  }
+
+  return state.roomChoices[0] || "201";
+}
+
+function createAdminDraftStudent() {
+  return {
+    id: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    name: "",
+    room: normalizeAdminDraftRoom(""),
+    grade: 1,
+  };
+}
+
+function populateAdminControls() {
+  adminDraftStudents = adminDraftStudents.map((draft) => ({
+    ...draft,
+    room: normalizeAdminDraftRoom(draft.room),
+    grade: [1, 2, 3].includes(Number(draft.grade)) ? Number(draft.grade) : 1,
+  }));
+}
+
+function renderAdminDraftStudentRow(draft) {
+  return `
+    <tr data-admin-draft-id="${escapeHtml(draft.id)}" class="admin-draft-row">
+      <td><input type="text" class="text-input" data-admin-draft-name placeholder="이름" value="${escapeHtml(draft.name || "")}" /></td>
+      <td>
+        <select class="text-input" data-admin-draft-room>
+          ${buildAdminRoomOptions(normalizeAdminDraftRoom(draft.room))}
+        </select>
+      </td>
+      <td>
+        <select class="text-input" data-admin-draft-grade>
+          ${buildAdminGradeOptions(Number(draft.grade || 1))}
+        </select>
+      </td>
+      <td>
+        <div class="admin-cell-actions">
+          <button type="button" data-admin-draft-save="${escapeHtml(draft.id)}">저장</button>
+          <button type="button" data-admin-draft-cancel="${escapeHtml(draft.id)}">취소</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function syncAdminDraftStudentsFromDom() {
+  const rows = Array.from(elements.adminStudentRows?.querySelectorAll("[data-admin-draft-id]") || []);
+  if (rows.length === 0) {
+    return;
+  }
+
+  adminDraftStudents = rows.map((row) => ({
+    id: String(row.dataset.adminDraftId || ""),
+    name: String(row.querySelector("[data-admin-draft-name]")?.value || "").trim(),
+    room: String(row.querySelector("[data-admin-draft-room]")?.value || normalizeAdminDraftRoom("")).trim(),
+    grade: Number(row.querySelector("[data-admin-draft-grade]")?.value || 1),
+  }));
+}
+
+function renderAdminStudentRows() {
+  const people = [...state.people].sort((left, right) => {
+    if (left.room !== right.room) {
+      return left.room.localeCompare(right.room);
+    }
+    if (Number(left.slot) !== Number(right.slot)) {
+      return Number(left.slot) - Number(right.slot);
+    }
+    return left.name.localeCompare(right.name, "ko");
+  });
+
+  const rows = [
+    ...adminDraftStudents.map(renderAdminDraftStudentRow),
+    ...people.map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>${escapeHtml(person.name)}</td>
+          <td>
+            <select class="text-input" data-admin-room-input="${escapeHtml(person.name)}">
+              ${buildAdminRoomOptions(String(person.room || state.roomChoices[0] || ""))}
+            </select>
+          </td>
+          <td>
+            <select class="text-input" data-admin-grade-input="${escapeHtml(person.name)}">
+              ${buildAdminGradeOptions(Number(person.grade || 1))}
+            </select>
+          </td>
+          <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
+        </tr>
+      `,
+    ),
+  ];
+
+  if (rows.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생 데이터가 없습니다.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = rows.join("");
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  syncAdminDraftStudentsFromDom();
+  const draft = createAdminDraftStudent();
+  adminDraftStudents.unshift(draft);
+  renderAdminStudentRows();
+  elements.adminStudentRows.querySelector(`[data-admin-draft-id="${CSS.escape(draft.id)}"] [data-admin-draft-name]`)?.focus();
+}
+
+function handleAdminStudentAction(event) {
+  const draftSaveButton = event.target.closest("[data-admin-draft-save]");
+  if (draftSaveButton) {
+    const draftId = String(draftSaveButton.dataset.adminDraftSave || "").trim();
+    if (draftId) {
+      saveDraftStudentById(draftId);
+    }
+    return;
+  }
+
+  const draftCancelButton = event.target.closest("[data-admin-draft-cancel]");
+  if (draftCancelButton) {
+    const draftId = String(draftCancelButton.dataset.adminDraftCancel || "").trim();
+    if (draftId) {
+      cancelDraftStudentById(draftId);
+    }
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+function handleAdminStudentFieldChange(event) {
+  const draftRow = event.target.closest("tr[data-admin-draft-id]");
+  if (draftRow) {
+    syncAdminDraftStudentsFromDom();
+    return;
+  }
+
+  const row = event.target.closest("tr[data-admin-name]");
+  if (!row) {
+    return;
+  }
+
+  const changedRoom = event.target.closest("[data-admin-room-input]");
+  const changedGrade = event.target.closest("[data-admin-grade-input]");
+  if (!changedRoom && !changedGrade) {
+    return;
+  }
+
+  const name = String(row.dataset.adminName || "").trim();
+  const room = String(row.querySelector("[data-admin-room-input]")?.value || "").trim();
+  const grade = Number(row.querySelector("[data-admin-grade-input]")?.value || 0);
+  if (!name) {
+    return;
+  }
+
+  updateStudentProfileByName(name, room, grade);
+}
+
+async function saveDraftStudentById(draftId) {
+  syncAdminDraftStudentsFromDom();
+  const draft = adminDraftStudents.find((candidate) => candidate.id === draftId);
+  if (!draft) {
+    return;
+  }
+
+  if (!draft.name) {
+    setMessage("학생 이름을 입력하세요.", true);
+    return;
+  }
+
+  if (!draft.room) {
+    setMessage("호실을 선택하세요.", true);
+    return;
+  }
+
+  if (![1, 2, 3].includes(Number(draft.grade))) {
+    setMessage("학년은 1, 2, 3만 가능합니다.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: draft.name,
+        room: draft.room,
+        grade: Number(draft.grade),
+      }),
+    });
+    adminDraftStudents = adminDraftStudents.filter((candidate) => candidate.id !== draftId);
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 추가했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function cancelDraftStudentById(draftId) {
+  syncAdminDraftStudentsFromDom();
+  adminDraftStudents = adminDraftStudents.filter((candidate) => candidate.id !== draftId);
+  renderAdminStudentRows();
+}
+
+async function updateStudentProfileByName(name, room, grade) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ room, grade }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생 정보를 수정했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+let adminDraftStudents = [];
+
+function createAdminDraftStudent() {
+  return {
+    id: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    name: "",
+    room: String(state.roomChoices?.[0] || ""),
+    grade: 1,
+  };
+}
+
+function populateAdminControls() {
+  adminDraftStudents = adminDraftStudents.map((draft) => ({
+    ...draft,
+    room: String(draft.room || state.roomChoices?.[0] || ""),
+    grade: [1, 2, 3].includes(Number(draft.grade)) ? Number(draft.grade) : 1,
+  }));
+}
+
+function syncAdminDraftStudentsFromDom() {
+  const rows = Array.from(elements.adminStudentRows?.querySelectorAll("[data-admin-draft-id]") || []);
+  if (rows.length === 0) {
+    return;
+  }
+
+  adminDraftStudents = rows.map((row) => {
+    const id = String(row.dataset.adminDraftId || "");
+    return {
+      id,
+      name: String(row.querySelector("[data-admin-draft-name]")?.value || "").trim(),
+      room: String(row.querySelector("[data-admin-draft-room]")?.value || state.roomChoices?.[0] || ""),
+      grade: Number(row.querySelector("[data-admin-draft-grade]")?.value || 1),
+    };
+  });
+}
+
+function getAdminRoomOptionsMarkup(selectedRoom = "") {
+  return (state.roomChoices || [])
+    .map((room) => {
+      const selected = room === selectedRoom ? " selected" : "";
+      return `<option value="${escapeHtml(room)}"${selected}>${escapeHtml(room)}</option>`;
+    })
+    .join("");
+}
+
+function getAdminGradeOptionsMarkup(selectedGrade = 1) {
+  return [1, 2, 3]
+    .map((grade) => {
+      const selected = Number(selectedGrade) === grade ? " selected" : "";
+      return `<option value="${grade}"${selected}>${grade}</option>`;
+    })
+    .join("");
+}
+
+function renderAdminDraftStudentRow(draft) {
+  return `
+    <tr data-admin-draft-id="${escapeHtml(draft.id)}" class="admin-draft-row">
+      <td><input type="text" class="text-input" data-admin-draft-name placeholder="이름" value="${escapeHtml(draft.name || "")}" /></td>
+      <td><select class="text-input" data-admin-draft-room>${getAdminRoomOptionsMarkup(draft.room)}</select></td>
+      <td><select class="text-input" data-admin-draft-grade>${getAdminGradeOptionsMarkup(draft.grade)}</select></td>
+      <td>
+        <div class="admin-cell-actions">
+          <span class="admin-default-password">초기 비밀번호 3141</span>
+          <button type="button" data-admin-draft-save="${escapeHtml(draft.id)}">저장</button>
+        </div>
+      </td>
+      <td><button type="button" data-admin-draft-cancel="${escapeHtml(draft.id)}">취소</button></td>
+    </tr>
+  `;
+}
+
+function renderStoredAdminStudentRow(person) {
+  return `
+    <tr data-admin-name="${escapeHtml(person.name)}">
+      <td>${escapeHtml(person.name)}</td>
+      <td>${escapeHtml(person.room)}</td>
+      <td>${escapeHtml(person.grade ?? "")}</td>
+      <td>
+        <div class="admin-cell-actions">
+          <input type="text" class="text-input" data-admin-password-input="${escapeHtml(person.name)}" placeholder="새 비밀번호" />
+          <button type="button" data-admin-password-save="${escapeHtml(person.name)}">변경</button>
+        </div>
+      </td>
+      <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
+    </tr>
+  `;
+}
+
+function renderAdminStudentRows() {
+  const people = [...state.people].sort((left, right) => {
+    if (left.room !== right.room) {
+      return left.room.localeCompare(right.room);
+    }
+    if (Number(left.slot) !== Number(right.slot)) {
+      return Number(left.slot) - Number(right.slot);
+    }
+    return left.name.localeCompare(right.name, "ko");
+  });
+
+  const rows = [
+    ...adminDraftStudents.map(renderAdminDraftStudentRow),
+    ...people.map(renderStoredAdminStudentRow),
+  ];
+
+  if (rows.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = rows.join("");
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  syncAdminDraftStudentsFromDom();
+  const draft = createAdminDraftStudent();
+  adminDraftStudents.push(draft);
+  renderAdminStudentRows();
+
+  const nameInput = elements.adminStudentRows.querySelector(
+    `[data-admin-draft-id="${CSS.escape(draft.id)}"] [data-admin-draft-name]`,
+  );
+  nameInput?.focus();
+}
+
+async function saveDraftStudentById(draftId) {
+  syncAdminDraftStudentsFromDom();
+  const draft = adminDraftStudents.find((candidate) => candidate.id === draftId);
+  if (!draft) {
+    return;
+  }
+
+  if (!draft.name) {
+    setMessage("학생 이름을 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: draft.name,
+        room: draft.room,
+        grade: draft.grade,
+      }),
+    });
+    adminDraftStudents = adminDraftStudents.filter((candidate) => candidate.id !== draftId);
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 추가했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function cancelDraftStudentById(draftId) {
+  syncAdminDraftStudentsFromDom();
+  adminDraftStudents = adminDraftStudents.filter((candidate) => candidate.id !== draftId);
+  renderAdminStudentRows();
+}
+
+function handleAdminStudentAction(event) {
+  const draftSaveButton = event.target.closest("[data-admin-draft-save]");
+  if (draftSaveButton) {
+    const draftId = String(draftSaveButton.dataset.adminDraftSave || "").trim();
+    if (draftId) {
+      saveDraftStudentById(draftId);
+    }
+    return;
+  }
+
+  const draftCancelButton = event.target.closest("[data-admin-draft-cancel]");
+  if (draftCancelButton) {
+    const draftId = String(draftCancelButton.dataset.adminDraftCancel || "").trim();
+    if (draftId) {
+      cancelDraftStudentById(draftId);
+    }
+    return;
+  }
+
+  const passwordButton = event.target.closest("[data-admin-password-save]");
+  if (passwordButton) {
+    const name = String(passwordButton.dataset.adminPasswordSave || "").trim();
+    const input = elements.adminStudentRows.querySelector(`[data-admin-password-input="${CSS.escape(name)}"]`);
+    const password = String(input?.value || "");
+    if (!password) {
+      setMessage("새 비밀번호를 입력하세요.", true);
+      return;
+    }
+    changeStudentPasswordByName(name, password, input);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function changeStudentPasswordByName(name, password, input) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}/password`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    if (input) {
+      input.value = "";
+    }
+    setMessage("학생 비밀번호를 변경했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function deleteStudentByName(name) {
+  syncAdminDraftStudentsFromDom();
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 삭제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function getDashboardAttendanceScopeLabel() {
+  if (state.dashboardFilter === "GRADE_1") {
+    return "1학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_2") {
+    return "2학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_3") {
+    return "3학년";
+  }
+
+  if (state.dashboardFilter === "OUT") {
+    return "외출";
+  }
+
+  if (state.dashboardFilter === "OVERNIGHT") {
+    return "외박";
+  }
+
+  return "전체";
+}
+
+function isAttendanceUnavailableForOccupant(occupant) {
+  return Boolean(
+    occupant &&
+      !occupant.empty &&
+      (occupant.isOut || occupant.isPhoneOnly || occupant.isOvernight),
+  );
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+
+  if (state.dashboardAttendanceMode) {
+    const visibleUsers = getFilteredDashboardRooms()
+      .flatMap((room) => room.occupants)
+      .filter((occupant) => !occupant.empty);
+    const attendanceTargets = visibleUsers.filter((user) => !isAttendanceUnavailableForOccupant(user));
+    const attendanceCount = attendanceTargets.filter((user) => user.attendanceChecked).length;
+    elements.summaryLine.textContent = `${getDashboardAttendanceScopeLabel()} 출석 ${attendanceCount} / ${attendanceTargets.length}`;
+    return;
+  }
+
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
+}
+
+function canToggleAttendanceForOccupant(occupant) {
+  return (
+    state.dashboardAttendanceMode &&
+    state.userRole === "student" &&
+    !occupant.empty &&
+    !isAttendanceUnavailableForOccupant(occupant) &&
+    occupant.name === state.loginName
+  );
+}
+
+function renderRoomSlot(occupant) {
+  const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
+  const isAttendanceUnavailable = isAttendanceUnavailableForOccupant(occupant);
+  const statusClass = occupant.empty
+    ? "empty"
+    : isAttendanceMode
+      ? isAttendanceUnavailable
+        ? "attendance-disabled"
+        : occupant.attendanceChecked
+          ? "attendance-in"
+          : "attendance-out"
+      : occupant.isOvernight
+        ? "overnight"
+        : occupant.isOut
+          ? "out"
+          : occupant.isPhoneOnly
+            ? "phone"
+            : "in";
+
+  const popover = occupant.empty
+    ? ""
+    : occupant.isOvernight
+      ? `
+          <div class="dashboard-popover">
+            <div>외박</div>
+            <div>사유: ${escapeHtml(occupant.currentOvernight?.reason || "없음")}</div>
+          </div>
+        `
+      : occupant.isOut || occupant.isPhoneOnly
+        ? `
+            <div class="dashboard-popover">
+              <div>${escapeHtml(occupant.isOut ? "외출" : "폰")}</div>
+              <div>사유: ${escapeHtml(occupant.currentInterval?.reason || "없음")}</div>
+              <div>폰 ${escapeHtml(occupant.currentInterval?.phone || "X")}</div>
+            </div>
+          `
+        : "";
+
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
+  const nameLabel = occupant.empty ? "" : occupant.name;
+  const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
+  const canToggle = canToggleAttendanceForOccupant(occupant);
+  const nameMarkup = occupant.empty
+    ? `<div class="${nameClass}"></div>`
+    : canToggle
+      ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
+      : `<div class="${nameClass}">${escapeHtml(nameLabel)}</div>`;
+
+  return `
+    <div class="room-slot">
+      <div class="slot-number">${gradeLabel}</div>
+      <div class="${wrapClass}">
+        ${nameMarkup}
+        ${popover}
+      </div>
+    </div>
+  `;
+}
+
 
 async function login() {
   const name = String(elements.authNameInput.value || "").trim();
@@ -2071,6 +3583,1003 @@ async function initialize() {
   clearAuthMessage();
   await loadAuthOptions();
   await restoreSession();
+}
+
+
+function shouldShowUserPicker() {
+  return state.userRole === "warden" && ["settings", "overnight"].includes(state.activeTab);
+}
+
+function shouldShowSaveButton() {
+  return ["settings", "overnight"].includes(state.activeTab);
+}
+
+function updateUserControlsVisibility() {
+  const showUserPicker = shouldShowUserPicker();
+  const showSaveButton = shouldShowSaveButton();
+
+  elements.nameInput.classList.toggle("hidden", !showUserPicker);
+  elements.loadUserButton.classList.toggle("hidden", !showUserPicker);
+  elements.saveUserButton.classList.toggle("hidden", !showSaveButton);
+
+  elements.nameInput.disabled = !showUserPicker;
+  elements.loadUserButton.disabled = !showUserPicker;
+  elements.saveUserButton.disabled = !showSaveButton;
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTabButton.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTab.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  updateUserControlsVisibility();
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "?ш컧 紐⑤뱶" : `?숈깮 紐⑤뱶${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
+  }
+
+  renderMessagesScope();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = Array.isArray(payload.people) ? payload.people : [];
+  state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
+  state.wardenName = String(payload.wardenName || state.wardenName || "?ш컧");
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderAuthNameOptions();
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const savedName = localStorage.getItem("selectedName");
+  const preferredName = state.userRole === "warden" ? savedName : state.loginName;
+  const initialName =
+    state.people.find((person) => person.name === preferredName)?.name ||
+    state.people.find((person) => person.name === state.loginName)?.name ||
+    state.people[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+
+function getManageablePeople() {
+  if (state.userRole === "warden") {
+    return getSortedPeople();
+  }
+
+  return getSortedPeople().filter((person) => person.name === state.loginName);
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  const manageablePeople = getManageablePeople();
+  elements.nameInput.innerHTML = manageablePeople
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+
+  if (selectedName && manageablePeople.some((person) => person.name === selectedName)) {
+    elements.nameInput.value = selectedName;
+    return;
+  }
+
+  elements.nameInput.value = manageablePeople[0]?.name || "";
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
+  }
+
+  renderMessagesScope();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = Array.isArray(payload.people) ? payload.people : [];
+  state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
+  state.wardenName = String(payload.wardenName || state.wardenName || "?ш컧");
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderAuthNameOptions();
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const manageablePeople = getManageablePeople();
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    manageablePeople.find((person) => person.name === savedName)?.name ||
+    manageablePeople.find((person) => person.name === state.loginName)?.name ||
+    manageablePeople[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+
+function getManageablePeople() {
+  if (state.userRole === "warden") {
+    return getSortedPeople();
+  }
+
+  return getSortedPeople().filter((person) => person.name === state.loginName);
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  const manageablePeople = getManageablePeople();
+  elements.nameInput.innerHTML = manageablePeople
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+
+  if (selectedName && manageablePeople.some((person) => person.name === selectedName)) {
+    elements.nameInput.value = selectedName;
+    return;
+  }
+
+  elements.nameInput.value = manageablePeople[0]?.name || "";
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
+  }
+
+  renderMessagesScope();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = Array.isArray(payload.people) ? payload.people : [];
+  state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
+  state.wardenName = String(payload.wardenName || state.wardenName || "??");
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderAuthNameOptions();
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const manageablePeople = getManageablePeople();
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    manageablePeople.find((person) => person.name === savedName)?.name ||
+    manageablePeople.find((person) => person.name === state.loginName)?.name ||
+    manageablePeople[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "loginName")) {
+    state.loginName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "authNames")) {
+    state.authNames = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "wardenName")) {
+    state.wardenName = "사감";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "dashboardAttendanceMode")) {
+    state.dashboardAttendanceMode = localStorage.getItem("dashboardAttendanceMode") === "1";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "dashboardAttendanceDateKey")) {
+    state.dashboardAttendanceDateKey = "";
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.authNamePicker = document.querySelector("#authNamePicker");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.authNameToggleButton = document.querySelector("#authNameToggleButton");
+  elements.authNameMenu = document.querySelector("#authNameMenu");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.passwordTabButton = document.querySelector("#passwordTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.passwordTab = document.querySelector("#passwordTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.dashboardAttendanceModeInput = document.querySelector("#dashboardAttendanceModeInput");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.currentPasswordInput = document.querySelector("#currentPasswordInput");
+  elements.newPasswordInput = document.querySelector("#newPasswordInput");
+  elements.confirmPasswordInput = document.querySelector("#confirmPasswordInput");
+  elements.changePasswordButton = document.querySelector("#changePasswordButton");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminPasswordInput = document.querySelector("#adminPasswordInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  if (elements.dashboardAttendanceModeInput) {
+    elements.dashboardAttendanceModeInput.checked = Boolean(state.dashboardAttendanceMode);
+  }
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.authNameInput.addEventListener("focus", openAuthNameMenu);
+  elements.authNameInput.addEventListener("click", openAuthNameMenu);
+  elements.authNameInput.addEventListener("input", handleAuthNameInput);
+  elements.authNameInput.addEventListener("change", () => {
+    persistAuthSelectedName();
+  });
+  elements.authNameInput.addEventListener("keydown", handleAuthNameInputKeydown);
+  elements.authNameToggleButton.addEventListener("click", toggleAuthNameMenu);
+  elements.authNameMenu.addEventListener("click", handleAuthNameMenuClick);
+  document.addEventListener("click", handleDocumentClick);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.passwordTabButton.addEventListener("click", () => switchTab("password"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+  elements.dashboardAttendanceModeInput.addEventListener("change", handleDashboardAttendanceModeChange);
+  elements.dashboardBoard.addEventListener("click", handleDashboardBoardClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.userRole === "warden") {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.changePasswordButton.addEventListener("click", changeOwnPassword);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentAction);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+async function refreshDashboard() {
+  try {
+    const payload = await fetchJson("/api/dashboard");
+    state.dashboardRooms = payload.rooms || [];
+    state.dashboardAttendanceDateKey = payload.attendanceDateKey || "";
+    renderDashboardSummary();
+    renderDashboardBoard();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleDashboardAttendanceModeChange() {
+  state.dashboardAttendanceMode = Boolean(elements.dashboardAttendanceModeInput.checked);
+  localStorage.setItem("dashboardAttendanceMode", state.dashboardAttendanceMode ? "1" : "0");
+  renderDashboardSummary();
+  renderDashboardBoard();
+}
+
+function handleDashboardBoardClick(event) {
+  const button = event.target.closest("[data-attendance-name]");
+  if (!button) {
+    return;
+  }
+
+  event.preventDefault();
+  const name = String(button.dataset.attendanceName || "").trim();
+  if (!name || name !== state.loginName || state.userRole !== "student") {
+    return;
+  }
+
+  toggleAttendanceForCurrentUser();
+}
+
+async function toggleAttendanceForCurrentUser() {
+  try {
+    const payload = await fetchJson("/api/attendance/toggle", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    await refreshDashboard();
+    setMessage(payload.checked ? "출석체크했습니다." : "출석체크를 해제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+
+  if (state.dashboardAttendanceMode) {
+    const attendanceCount = allUsers.filter((user) => user.attendanceChecked).length;
+    elements.summaryLine.textContent = `현재 출석 ${attendanceCount} / ${allUsers.length}`;
+    return;
+  }
+
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
+}
+
+function canToggleAttendanceForOccupant(occupant) {
+  return (
+    state.dashboardAttendanceMode &&
+    state.userRole === "student" &&
+    !occupant.empty &&
+    occupant.name === state.loginName
+  );
+}
+
+function renderRoomSlot(occupant) {
+  const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
+  const statusClass = occupant.empty
+    ? "empty"
+    : isAttendanceMode
+      ? occupant.attendanceChecked
+        ? "attendance-in"
+        : "attendance-out"
+      : occupant.isOvernight
+        ? "overnight"
+        : occupant.isOut
+          ? "out"
+          : occupant.isPhoneOnly
+            ? "phone"
+            : "in";
+
+  const popover = occupant.empty
+    ? ""
+    : occupant.isOvernight
+      ? `
+          <div class="dashboard-popover">
+            <div>외박</div>
+            <div>사유: ${escapeHtml(occupant.currentOvernight?.reason || "없음")}</div>
+          </div>
+        `
+      : occupant.isOut || occupant.isPhoneOnly
+        ? `
+            <div class="dashboard-popover">
+              <div>${escapeHtml(occupant.isOut ? "외출" : "폰")}</div>
+              <div>사유: ${escapeHtml(occupant.currentInterval?.reason || "없음")}</div>
+              <div>폰 ${escapeHtml(occupant.currentInterval?.phone || "X")}</div>
+            </div>
+          `
+        : "";
+
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
+  const nameLabel = occupant.empty ? "" : occupant.name;
+  const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
+  const canToggle = canToggleAttendanceForOccupant(occupant);
+  const nameMarkup = occupant.empty
+    ? `<div class="${nameClass}"></div>`
+    : canToggle
+      ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
+      : `<div class="${nameClass}">${escapeHtml(nameLabel)}</div>`;
+
+  return `
+    <div class="room-slot">
+      <div class="slot-number">${gradeLabel}</div>
+      <div class="${wrapClass}">
+        ${nameMarkup}
+        ${popover}
+      </div>
+    </div>
+  `;
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "loginName")) {
+    state.loginName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "authNames")) {
+    state.authNames = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "wardenName")) {
+    state.wardenName = "사감";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "dashboardAttendanceMode")) {
+    state.dashboardAttendanceMode = localStorage.getItem("dashboardAttendanceMode") === "1";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "dashboardAttendanceDateKey")) {
+    state.dashboardAttendanceDateKey = "";
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.passwordTabButton = document.querySelector("#passwordTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.passwordTab = document.querySelector("#passwordTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.dashboardAttendanceModeInput = document.querySelector("#dashboardAttendanceModeInput");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.currentPasswordInput = document.querySelector("#currentPasswordInput");
+  elements.newPasswordInput = document.querySelector("#newPasswordInput");
+  elements.confirmPasswordInput = document.querySelector("#confirmPasswordInput");
+  elements.changePasswordButton = document.querySelector("#changePasswordButton");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminPasswordInput = document.querySelector("#adminPasswordInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  if (elements.dashboardAttendanceModeInput) {
+    elements.dashboardAttendanceModeInput.checked = Boolean(state.dashboardAttendanceMode);
+  }
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.authNameInput.addEventListener("focus", openAuthNameMenu);
+  elements.authNameInput.addEventListener("click", openAuthNameMenu);
+  elements.authNameInput.addEventListener("input", handleAuthNameInput);
+  elements.authNameInput.addEventListener("change", () => {
+    persistAuthSelectedName();
+  });
+  elements.authNameInput.addEventListener("keydown", handleAuthNameInputKeydown);
+  elements.authNameToggleButton.addEventListener("click", toggleAuthNameMenu);
+  elements.authNameMenu.addEventListener("click", handleAuthNameMenuClick);
+  document.addEventListener("click", handleDocumentClick);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.passwordTabButton.addEventListener("click", () => switchTab("password"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+  elements.dashboardAttendanceModeInput.addEventListener("change", handleDashboardAttendanceModeChange);
+  elements.dashboardBoard.addEventListener("click", handleDashboardBoardClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.userRole === "warden") {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.changePasswordButton.addEventListener("click", changeOwnPassword);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentAction);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+async function refreshDashboard() {
+  try {
+    const payload = await fetchJson("/api/dashboard");
+    state.dashboardRooms = payload.rooms || [];
+    state.dashboardAttendanceDateKey = payload.attendanceDateKey || "";
+    renderDashboardSummary();
+    renderDashboardBoard();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleDashboardAttendanceModeChange() {
+  state.dashboardAttendanceMode = Boolean(elements.dashboardAttendanceModeInput.checked);
+  localStorage.setItem("dashboardAttendanceMode", state.dashboardAttendanceMode ? "1" : "0");
+  renderDashboardSummary();
+  renderDashboardBoard();
+}
+
+function handleDashboardBoardClick(event) {
+  const button = event.target.closest("[data-attendance-name]");
+  if (!button) {
+    return;
+  }
+
+  event.preventDefault();
+  const name = String(button.dataset.attendanceName || "").trim();
+  if (!name || name !== state.loginName || state.userRole !== "student") {
+    return;
+  }
+
+  toggleAttendanceForCurrentUser();
+}
+
+async function toggleAttendanceForCurrentUser() {
+  try {
+    const payload = await fetchJson("/api/attendance/toggle", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    await refreshDashboard();
+    setMessage(payload.checked ? "출석체크했습니다." : "출석체크를 해제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+
+  if (state.dashboardAttendanceMode) {
+    const attendanceCount = allUsers.filter((user) => user.attendanceChecked).length;
+    elements.summaryLine.textContent = `현재 출석 ${attendanceCount} / ${allUsers.length}`;
+    return;
+  }
+
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
+}
+
+function canToggleAttendanceForOccupant(occupant) {
+  return (
+    state.dashboardAttendanceMode &&
+    state.userRole === "student" &&
+    !occupant.empty &&
+    occupant.name === state.loginName
+  );
+}
+
+function renderRoomSlot(occupant) {
+  const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
+  const statusClass = occupant.empty
+    ? "empty"
+    : isAttendanceMode
+      ? occupant.attendanceChecked
+        ? "attendance-in"
+        : "attendance-out"
+      : occupant.isOvernight
+        ? "overnight"
+        : occupant.isOut
+          ? "out"
+          : occupant.isPhoneOnly
+            ? "phone"
+            : "in";
+
+  const popover = occupant.empty
+    ? ""
+    : occupant.isOvernight
+      ? `
+          <div class="dashboard-popover">
+            <div>외박</div>
+            <div>사유: ${escapeHtml(occupant.currentOvernight?.reason || "없음")}</div>
+          </div>
+        `
+      : occupant.isOut || occupant.isPhoneOnly
+        ? `
+            <div class="dashboard-popover">
+              <div>${escapeHtml(occupant.isOut ? "외출" : "폰")}</div>
+              <div>사유: ${escapeHtml(occupant.currentInterval?.reason || "없음")}</div>
+              <div>폰 ${escapeHtml(occupant.currentInterval?.phone || "X")}</div>
+            </div>
+          `
+        : "";
+
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
+  const nameLabel = occupant.empty ? "" : occupant.name;
+  const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
+  const canToggle = canToggleAttendanceForOccupant(occupant);
+  const nameMarkup = occupant.empty
+    ? `<div class="${nameClass}"></div>`
+    : canToggle
+      ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
+      : `<div class="${nameClass}">${escapeHtml(nameLabel)}</div>`;
+
+  return `
+    <div class="room-slot">
+      <div class="slot-number">${gradeLabel}</div>
+      <div class="${wrapClass}">
+        ${nameMarkup}
+        ${popover}
+      </div>
+    </div>
+  `;
 }
 
 function ensureExtendedState() {
@@ -2259,13 +4768,18 @@ function renderAuthNameOptions() {
     }
   }
 
-  elements.authNameInput.innerHTML = options
-    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-    .join("");
+  elements.authNameMenu.innerHTML = [
+    ...options.map(
+      (name) =>
+        `<button type="button" class="auth-name-option" data-auth-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`,
+    ),
+    '<div class="auth-name-empty hidden">검색 결과가 없습니다.</div>',
+  ].join("");
 
   const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
   const nextName = options.includes(savedName) ? savedName : options[0] || "";
   elements.authNameInput.value = nextName;
+  closeAuthNameMenu();
 }
 
 async function loadAuthOptions() {
@@ -2301,7 +4815,7 @@ function switchTab(tabName) {
 
 function renderNameOptions() {
   const selectedName = getSelectedNameInput();
-  elements.nameInput.innerHTML = getSortedPeople()
+  elements.nameInput.innerHTML = getManageablePeople()
     .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
     .join("");
   if (selectedName) {
@@ -2311,6 +4825,14 @@ function renderNameOptions() {
 
 function getSortedPeople() {
   return [...state.people].sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
+function getManageablePeople() {
+  if (state.userRole === "warden") {
+    return getSortedPeople();
+  }
+
+  return getSortedPeople().filter((person) => person.name === state.loginName);
 }
 
 function renderMessageSenderOptions() {
@@ -2429,6 +4951,8 @@ function applyRoleMode() {
 
   if (!isWarden && state.activeTab === "admin") {
     switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
   }
 
   renderMessagesScope();
@@ -2545,7 +5069,7 @@ async function sendWardenMessage() {
     });
     elements.wardenMessageInput.value = "";
     await loadMessages();
-    setMessage("사감문자를 보냈습니다.");
+    setMessage("사감쪽지를 보냈습니다.");
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -2754,7 +5278,7 @@ async function loadProtectedData() {
 
   state.userRole = payload.role || state.userRole || "student";
   state.loginName = payload.loginName || state.loginName || "";
-  state.people = payload.people || [];
+  state.people = Array.isArray(payload.people) ? payload.people : [];
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -2765,11 +5289,12 @@ async function loadProtectedData() {
   applyRoleMode();
   clearOwnPasswordInputs();
 
+  const manageablePeople = getManageablePeople();
   const savedName = localStorage.getItem("selectedName");
   const initialName =
-    state.people.find((person) => person.name === savedName)?.name ||
-    state.people.find((person) => person.name === state.loginName)?.name ||
-    state.people[0]?.name ||
+    manageablePeople.find((person) => person.name === savedName)?.name ||
+    manageablePeople.find((person) => person.name === state.loginName)?.name ||
+    manageablePeople[0]?.name ||
     "";
 
   if (initialName) {
@@ -3166,6 +5691,8 @@ function applyRoleMode() {
 
   if (!isWarden && state.activeTab === "admin") {
     switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
   }
 
   renderMessagesScope();
@@ -3283,7 +5810,7 @@ async function sendWardenMessage() {
     });
     elements.wardenMessageInput.value = "";
     await loadMessages();
-    setMessage("사감문자를 보냈습니다.");
+    setMessage("사감쪽지를 보냈습니다.");
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -3404,7 +5931,7 @@ async function loadProtectedData() {
   const payload = await fetchJson("/api/config");
 
   state.userRole = payload.role || state.userRole || "student";
-  state.people = payload.people || [];
+  state.people = Array.isArray(payload.people) ? payload.people : [];
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -3827,7 +6354,7 @@ function renderAdminStudentRows() {
   if (people.length === 0) {
     elements.adminStudentRows.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-row">학생이 없습니다</td>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
       </tr>
     `;
     return;
@@ -3839,15 +6366,14 @@ function renderAdminStudentRows() {
         <tr data-admin-name="${escapeHtml(person.name)}">
           <td>${escapeHtml(person.name)}</td>
           <td>${escapeHtml(person.room)}</td>
-          <td>${escapeHtml(person.slot)}</td>
           <td>${escapeHtml(person.grade ?? "")}</td>
           <td>
-            <div class="actions">
+            <div class="admin-cell-actions">
               <input type="text" class="text-input" data-admin-password-input="${escapeHtml(person.name)}" placeholder="새 비밀번호" />
               <button type="button" data-admin-password-save="${escapeHtml(person.name)}">변경</button>
+              <button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
             </div>
           </td>
-          <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
         </tr>
       `,
     )
@@ -3870,6 +6396,8 @@ function applyRoleMode() {
 
   if (!isWarden && state.activeTab === "admin") {
     switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
   }
 
   renderMessagesScope();
@@ -3986,7 +6514,7 @@ async function sendWardenMessage() {
     });
     elements.wardenMessageInput.value = "";
     await loadMessages();
-    setMessage("사감문자를 보냈습니다.");
+    setMessage("사감쪽지를 보냈습니다.");
   } catch (error) {
     setMessage(error.message, true);
   }
@@ -4196,8 +6724,9 @@ async function loadProtectedData() {
 
   state.userRole = payload.role || state.userRole || "student";
   state.loginName = payload.loginName || state.loginName || "";
-  state.people = payload.people || [];
-  state.authNames = state.people.map((person) => person.name);
+  state.people = Array.isArray(payload.people) ? payload.people : [];
+  state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
+  state.wardenName = String(payload.wardenName || state.wardenName || "??");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -4311,3 +6840,596 @@ async function initialize() {
   await loadAuthOptions();
   await restoreSession();
 }
+// Final account-guard overrides live below.
+
+function shouldShowUserPicker() {
+  return state.userRole === "warden" && ["settings", "overnight"].includes(state.activeTab);
+}
+
+function shouldShowSaveButton() {
+  return ["settings", "overnight"].includes(state.activeTab);
+}
+
+function updateUserControlsVisibility() {
+  const showUserPicker = shouldShowUserPicker();
+  const showSaveButton = shouldShowSaveButton();
+
+  elements.nameInput.classList.toggle("hidden", !showUserPicker);
+  elements.loadUserButton.classList.toggle("hidden", !showUserPicker);
+  elements.saveUserButton.classList.toggle("hidden", !showSaveButton);
+
+  elements.nameInput.disabled = !showUserPicker;
+  elements.loadUserButton.disabled = !showUserPicker;
+  elements.saveUserButton.disabled = !showSaveButton;
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTabButton.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTab.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  updateUserControlsVisibility();
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function getManageablePeople() {
+  if (state.userRole === "warden") {
+    return getSortedPeople();
+  }
+
+  return getSortedPeople().filter((person) => person.name === state.loginName);
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  const manageablePeople = getManageablePeople();
+  elements.nameInput.innerHTML = manageablePeople
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+
+  if (selectedName && manageablePeople.some((person) => person.name === selectedName)) {
+    elements.nameInput.value = selectedName;
+    return;
+  }
+
+  elements.nameInput.value = manageablePeople[0]?.name || "";
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  } else {
+    updateUserControlsVisibility();
+  }
+
+  renderMessagesScope();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = Array.isArray(payload.people) ? payload.people : [];
+  state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
+  state.wardenName = String(payload.wardenName || state.wardenName || "??");
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderAuthNameOptions();
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const manageablePeople = getManageablePeople();
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    manageablePeople.find((person) => person.name === savedName)?.name ||
+    manageablePeople.find((person) => person.name === state.loginName)?.name ||
+    manageablePeople[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+// Final dashboard attendance overrides live below.
+
+function getDashboardAttendanceScopeLabel() {
+  if (state.dashboardFilter === "GRADE_1") {
+    return "1학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_2") {
+    return "2학년";
+  }
+
+  if (state.dashboardFilter === "GRADE_3") {
+    return "3학년";
+  }
+
+  if (state.dashboardFilter === "OUT") {
+    return "외출";
+  }
+
+  if (state.dashboardFilter === "OVERNIGHT") {
+    return "외박";
+  }
+
+  return "전체";
+}
+
+function isAttendanceUnavailableForOccupant(occupant) {
+  return Boolean(
+    occupant &&
+      !occupant.empty &&
+      (occupant.isOut || occupant.isPhoneOnly || occupant.isOvernight),
+  );
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+
+  if (state.dashboardAttendanceMode) {
+    const visibleUsers = getFilteredDashboardRooms()
+      .flatMap((room) => room.occupants)
+      .filter((occupant) => !occupant.empty);
+    const attendanceTargets = visibleUsers.filter((user) => !isAttendanceUnavailableForOccupant(user));
+    const attendanceCount = attendanceTargets.filter((user) => user.attendanceChecked).length;
+    elements.summaryLine.textContent = `${getDashboardAttendanceScopeLabel()} 출석 ${attendanceCount} / ${attendanceTargets.length}`;
+    return;
+  }
+
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
+}
+
+function canToggleAttendanceForOccupant(occupant) {
+  return (
+    state.dashboardAttendanceMode &&
+    state.userRole === "student" &&
+    !occupant.empty &&
+    !isAttendanceUnavailableForOccupant(occupant) &&
+    occupant.name === state.loginName
+  );
+}
+
+function renderRoomSlot(occupant) {
+  const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
+  const isAttendanceUnavailable = isAttendanceUnavailableForOccupant(occupant);
+  const statusClass = occupant.empty
+    ? "empty"
+    : isAttendanceMode
+      ? isAttendanceUnavailable
+        ? "attendance-disabled"
+        : occupant.attendanceChecked
+          ? "attendance-in"
+          : "attendance-out"
+      : occupant.isOvernight
+        ? "overnight"
+        : occupant.isOut
+          ? "out"
+          : occupant.isPhoneOnly
+            ? "phone"
+            : "in";
+
+  const popover = occupant.empty
+    ? ""
+    : occupant.isOvernight
+      ? `
+          <div class="dashboard-popover">
+            <div>외박</div>
+            <div>사유: ${escapeHtml(occupant.currentOvernight?.reason || "없음")}</div>
+          </div>
+        `
+      : occupant.isOut || occupant.isPhoneOnly
+        ? `
+            <div class="dashboard-popover">
+              <div>${escapeHtml(occupant.isOut ? "외출" : "폰")}</div>
+              <div>사유: ${escapeHtml(occupant.currentInterval?.reason || "없음")}</div>
+              <div>폰 ${escapeHtml(occupant.currentInterval?.phone || "X")}</div>
+            </div>
+          `
+        : "";
+
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
+  const nameLabel = occupant.empty ? "" : occupant.name;
+  const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
+  const canToggle = canToggleAttendanceForOccupant(occupant);
+  const nameMarkup = occupant.empty
+    ? `<div class="${nameClass}"></div>`
+    : canToggle
+      ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
+      : `<div class="${nameClass}">${escapeHtml(nameLabel)}</div>`;
+
+  return `
+    <div class="room-slot">
+      <div class="slot-number">${gradeLabel}</div>
+      <div class="${wrapClass}">
+        ${nameMarkup}
+        ${popover}
+      </div>
+    </div>
+  `;
+}
+
+// Final admin rename overrides live below.
+
+function populateAdminControls() {
+  const roomFilterInput = document.querySelector("#adminRoomFilterInput");
+  if (!roomFilterInput) {
+    return;
+  }
+
+  const currentRoom = String(roomFilterInput.value || "").trim();
+  roomFilterInput.innerHTML = [
+    '<option value="">전체 호실</option>',
+    ...(state.roomChoices || []).map(
+      (room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}</option>`,
+    ),
+  ].join("");
+  roomFilterInput.value = (state.roomChoices || []).includes(currentRoom) ? currentRoom : "";
+}
+
+function getFilteredAdminPeople() {
+  const searchQuery = String(document.querySelector("#adminSearchInput")?.value || "").trim();
+  const roomFilter = String(document.querySelector("#adminRoomFilterInput")?.value || "").trim();
+  const gradeFilter = String(document.querySelector("#adminGradeFilterInput")?.value || "").trim();
+
+  return [...state.people]
+    .sort((left, right) => {
+      if (left.room !== right.room) {
+        return left.room.localeCompare(right.room);
+      }
+      if (Number(left.slot) !== Number(right.slot)) {
+        return Number(left.slot) - Number(right.slot);
+      }
+      return left.name.localeCompare(right.name, "ko");
+    })
+    .filter((person) => {
+      if (roomFilter && person.room !== roomFilter) {
+        return false;
+      }
+      if (gradeFilter && String(person.grade ?? "") !== gradeFilter) {
+        return false;
+      }
+      if (searchQuery && !person.name.includes(searchQuery)) {
+        return false;
+      }
+      return true;
+    });
+}
+
+function renderAdminRoomSelectOptions(selectedRoom) {
+  return (state.roomChoices || [])
+    .map(
+      (room) =>
+        `<option value="${escapeHtml(room)}"${room === selectedRoom ? " selected" : ""}>${escapeHtml(room)}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminGradeSelectOptions(selectedGrade) {
+  return [1, 2, 3]
+    .map(
+      (grade) =>
+        `<option value="${grade}"${Number(selectedGrade) === grade ? " selected" : ""}>${grade}</option>`,
+    )
+    .join("");
+}
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (!elements.adminStudentRows) {
+    return;
+  }
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" data-admin-profile-save="${escapeHtml(person.name)}">저장</button>
+              <button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(window.prompt("추가할 학생 이름을 입력하세요.", "") || "").trim();
+  if (!name) {
+    return;
+  }
+
+  const defaultRoom = String(state.roomChoices?.[0] || "");
+  const room = String(window.prompt("호실을 입력하세요.", defaultRoom) || "").trim();
+  if (!room) {
+    return;
+  }
+
+  const gradeText = String(window.prompt("학년을 입력하세요. (1, 2, 3)", "1") || "").trim();
+  if (!gradeText) {
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        room,
+        grade: Number(gradeText),
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentAction(event) {
+  const saveButton = event.target.closest("[data-admin-profile-save]");
+  if (saveButton) {
+    const originalName = String(saveButton.dataset.adminProfileSave || "").trim();
+    const row = saveButton.closest("[data-admin-name]");
+    if (!originalName || !row) {
+      return;
+    }
+
+    updateStudentByName(originalName, row);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function updateStudentByName(originalName, row) {
+  const nextName = String(row.querySelector("[data-admin-profile-name]")?.value || "").trim();
+  const nextRoom = String(row.querySelector("[data-admin-profile-room]")?.value || "").trim();
+  const nextGrade = Number(row.querySelector("[data-admin-profile-grade]")?.value || 0);
+
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(originalName)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: nextName,
+        room: nextRoom,
+        grade: nextGrade,
+      }),
+    });
+    await loadProtectedData();
+    switchTab("admin");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+// Final inline admin edit overrides live below.
+
+function renderAdminStudentRows() {
+  const people = getFilteredAdminPeople();
+
+  if (!elements.adminStudentRows) {
+    return;
+  }
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="4" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>
+            <input
+              type="text"
+              class="text-input admin-profile-name-input"
+              data-admin-profile-name
+              value="${escapeHtml(person.name)}"
+              placeholder="이름"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-room>
+              ${renderAdminRoomSelectOptions(person.room)}
+            </select>
+          </td>
+          <td>
+            <select class="text-input admin-profile-select" data-admin-profile-grade>
+              ${renderAdminGradeSelectOptions(person.grade)}
+            </select>
+          </td>
+          <td>
+            <div class="admin-cell-actions">
+              <button type="button" class="admin-delete-button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
+            </div>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function handleAdminStudentAction(event) {
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+function handleAdminStudentFieldChange(event) {
+  const row = event.target.closest("[data-admin-name]");
+  if (!row) {
+    return;
+  }
+
+  if (
+    event.target.matches("[data-admin-profile-name]") ||
+    event.target.matches("[data-admin-profile-room]") ||
+    event.target.matches("[data-admin-profile-grade]")
+  ) {
+    updateStudentByName(String(row.dataset.adminName || "").trim(), row);
+  }
+}
+
+function handleAdminStudentFieldKeydown(event) {
+  if (event.key !== "Enter" || !event.target.matches("[data-admin-profile-name]")) {
+    return;
+  }
+
+  event.preventDefault();
+  event.target.blur();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const adminStudentRows = document.querySelector("#adminStudentRows");
+  if (!adminStudentRows || adminStudentRows.dataset.inlineAdminEditBound === "1") {
+    return;
+  }
+
+  adminStudentRows.dataset.inlineAdminEditBound = "1";
+  adminStudentRows.addEventListener("change", handleAdminStudentFieldChange);
+  adminStudentRows.addEventListener("keydown", handleAdminStudentFieldKeydown);
+});

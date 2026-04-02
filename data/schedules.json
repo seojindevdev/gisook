@@ -1,9 +1,638 @@
 {
   "users": {
+    "김원우": {
+      "profile": {
+        "room": "201"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "한수영": {
+      "profile": {
+        "room": "201"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김태흔": {
+      "profile": {
+        "room": "201"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "송창민": {
+      "profile": {
+        "room": "202"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "19:00",
+          "end": "23:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "한성률": {
+      "profile": {
+        "room": "202"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "강선우 2": {
+      "profile": {
+        "room": "202"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "강준혁": {
+      "profile": {
+        "room": "202"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "조원혁": {
+      "profile": {
+        "room": "203"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "채민준": {
+      "profile": {
+        "room": "203"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "15:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "노우혁": {
+      "profile": {
+        "room": "203"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "황성찬": {
+      "profile": {
+        "room": "204"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "21:00",
+          "end": "22:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "19:00",
+          "end": "20:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "WED",
+          "start": "19:30",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "정연우": {
+      "profile": {
+        "room": "204"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "18:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "18:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "이원교": {
+      "profile": {
+        "room": "204"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "노건호": {
+      "profile": {
+        "room": "204"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "지연우": {
+      "profile": {
+        "room": "205"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "19:00",
+          "end": "20:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "김인후": {
+      "profile": {
+        "room": "205"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "강정일": {
+      "profile": {
+        "room": "205"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "오성윤": {
+      "profile": {
+        "room": "205"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "홍현준": {
+      "profile": {
+        "room": "206"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "18:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "18:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "구본영": {
+      "profile": {
+        "room": "206"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "이현명": {
+      "profile": {
+        "room": "206"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "송호경": {
+      "profile": {
+        "room": "206"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "민주원": {
+      "profile": {
+        "room": "207"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김세훈": {
+      "profile": {
+        "room": "207"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "15:00",
+          "end": "21:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "15:00",
+          "end": "21:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "현정우": {
+      "profile": {
+        "room": "207"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "노우석": {
+      "profile": {
+        "room": "207"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "임성환": {
+      "profile": {
+        "room": "208"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "이승민": {
+      "profile": {
+        "room": "208"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김서진": {
+      "profile": {
+        "room": "208"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "강선우 1": {
+      "profile": {
+        "room": "209"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "양민우": {
+      "profile": {
+        "room": "209"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "장하윤": {
+      "profile": {
+        "room": "209"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "한민성": {
+      "profile": {
+        "room": "210"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "홍현세": {
+      "profile": {
+        "room": "210"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "강지용": {
+      "profile": {
+        "room": "211"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "19:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "19:30",
+          "end": "23:10",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "WED",
+          "start": "19:00",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-02T14:52:33.227Z"
+    },
+    "이호진": {
+      "profile": {
+        "room": "211"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "21:00",
+          "end": "23:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "20:30",
+          "end": "22:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "현준호": {
+      "profile": {
+        "room": "211"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "장예헌": {
+      "profile": {
+        "room": "212"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "서정호": {
+      "profile": {
+        "room": "212"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "이상민": {
+      "profile": {
+        "room": "212"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "15:00",
+          "end": "21:40",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "15:00",
+          "end": "21:40",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "김범수": {
+      "profile": {
+        "room": "213"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "18:50",
+          "end": "20:50",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "21:00",
+          "end": "22:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "WED",
+          "start": "19:00",
+          "end": "20:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "현승효": {
+      "profile": {
+        "room": "213"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "19:00",
+          "end": "20:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        },
+        {
+          "day": "TUE",
+          "start": "19:30",
+          "end": "21:00",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "임재현": {
+      "profile": {
+        "room": "213"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김정욱": {
+      "profile": {
+        "room": "213"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": "2026-04-02T12:32:24.943Z"
+    },
+    "안시율": {
+      "profile": {
+        "room": "214"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "오현준": {
+      "profile": {
+        "room": "214"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김예범": {
+      "profile": {
+        "room": "214"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "심지후": {
+      "profile": {
+        "room": "215"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "20:00",
+          "end": "21:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "김지호": {
+      "profile": {
+        "room": "215"
+      },
+      "intervals": [
+        {
+          "day": "MON",
+          "start": "15:00",
+          "end": "23:30",
+          "reason": "",
+          "outing": "O",
+          "phone": "X"
+        }
+      ],
+      "overnights": [],
+      "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "고유빈": {
+      "profile": {
+        "room": "215"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "김현우": {
+      "profile": {
+        "room": "215"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
     "함병국": {
       "profile": {
-        "room": "201",
-        "slot": 1
+        "room": "201"
       },
       "intervals": [
         {
@@ -41,765 +670,6 @@
       ],
       "overnights": [],
       "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "김원우": {
-      "profile": {
-        "room": "201",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "한수영": {
-      "profile": {
-        "room": "201",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김태흔": {
-      "profile": {
-        "room": "201",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "송창민": {
-      "profile": {
-        "room": "202",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "19:00",
-          "end": "23:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "한성률": {
-      "profile": {
-        "room": "202",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "강선우2(2학년)": {
-      "profile": {
-        "room": "202",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "강준혁": {
-      "profile": {
-        "room": "202",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "조원혁": {
-      "profile": {
-        "room": "203",
-        "slot": 1
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "채민준": {
-      "profile": {
-        "room": "203",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "15:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "노우혁": {
-      "profile": {
-        "room": "203",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "황성찬": {
-      "profile": {
-        "room": "204",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "21:00",
-          "end": "22:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "19:00",
-          "end": "20:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "WED",
-          "start": "19:30",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "정연우": {
-      "profile": {
-        "room": "204",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "18:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "18:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "이원교": {
-      "profile": {
-        "room": "204",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "노건호": {
-      "profile": {
-        "room": "204",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "지연우": {
-      "profile": {
-        "room": "205",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "19:00",
-          "end": "20:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "김인호": {
-      "profile": {
-        "room": "205",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "19:00",
-          "end": "20:40",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "19:00",
-          "end": "22:40",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "강정일": {
-      "profile": {
-        "room": "205",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "오성윤": {
-      "profile": {
-        "room": "205",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "홍현준": {
-      "profile": {
-        "room": "206",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "18:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "18:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "구본영": {
-      "profile": {
-        "room": "206",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "이현명": {
-      "profile": {
-        "room": "206",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "송호경": {
-      "profile": {
-        "room": "206",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "민주원": {
-      "profile": {
-        "room": "207",
-        "slot": 1
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김세훈": {
-      "profile": {
-        "room": "207",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "15:00",
-          "end": "21:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "15:00",
-          "end": "21:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "현정우": {
-      "profile": {
-        "room": "207",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "노우석": {
-      "profile": {
-        "room": "207",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "임성환": {
-      "profile": {
-        "room": "208",
-        "slot": 1
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "이승민": {
-      "profile": {
-        "room": "208",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김서진": {
-      "profile": {
-        "room": "208",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "강태영": {
-      "profile": {
-        "room": "209",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "21:00",
-          "end": "23:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "강선우1(1학년)": {
-      "profile": {
-        "room": "209",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "15:00",
-          "end": "23:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "양민우": {
-      "profile": {
-        "room": "209",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "장하윤": {
-      "profile": {
-        "room": "209",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "한민성": {
-      "profile": {
-        "room": "210",
-        "slot": 1
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "홍현세": {
-      "profile": {
-        "room": "210",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "강지용": {
-      "profile": {
-        "room": "211",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "19:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "19:30",
-          "end": "23:10",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "WED",
-          "start": "19:00",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "이호진": {
-      "profile": {
-        "room": "211",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "21:00",
-          "end": "23:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "20:30",
-          "end": "22:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "현솔온": {
-      "profile": {
-        "room": "211",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "장예현": {
-      "profile": {
-        "room": "212",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "21:00",
-          "end": "21:40",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "18:50",
-          "end": "20:50",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "WED",
-          "start": "21:00",
-          "end": "23:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "서정오": {
-      "profile": {
-        "room": "212",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "21:00",
-          "end": "23:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "이상민": {
-      "profile": {
-        "room": "212",
-        "slot": 3
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "15:00",
-          "end": "21:40",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "15:00",
-          "end": "21:40",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "김범수": {
-      "profile": {
-        "room": "213",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "18:50",
-          "end": "20:50",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "21:00",
-          "end": "22:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "WED",
-          "start": "19:00",
-          "end": "20:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "현승효": {
-      "profile": {
-        "room": "213",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "19:00",
-          "end": "20:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
-          "day": "TUE",
-          "start": "19:30",
-          "end": "21:00",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "임재현": {
-      "profile": {
-        "room": "213",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김정욱": {
-      "profile": {
-        "room": "213",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "안시율": {
-      "profile": {
-        "room": "214",
-        "slot": 1
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "오현준": {
-      "profile": {
-        "room": "214",
-        "slot": 2
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김예범": {
-      "profile": {
-        "room": "214",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "심지후": {
-      "profile": {
-        "room": "215",
-        "slot": 1
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "20:00",
-          "end": "21:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "김지호": {
-      "profile": {
-        "room": "215",
-        "slot": 2
-      },
-      "intervals": [
-        {
-          "day": "MON",
-          "start": "15:00",
-          "end": "23:30",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        }
-      ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "고유빈": {
-      "profile": {
-        "room": "215",
-        "slot": 3
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
-    "김현우": {
-      "profile": {
-        "room": "215",
-        "slot": 4
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
     }
   }
 }

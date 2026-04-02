@@ -1,4 +1,10 @@
 {
-  "messages": []
+  "messages": [
+    {
+      "id": "009637fc6b404c541132eb4e8b3b45a7ab6c3a4b615549ee",
+      "senderName": "김서진",
+      "text": "테스트",
+      "createdAt": "2026-04-02T12:21:04.893Z"
+    }
+  ]
 }
-

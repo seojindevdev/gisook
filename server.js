@@ -7,15 +7,17 @@ const { URL } = require("url");
 const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const DATA_DIR = path.join(ROOT_DIR, "data");
-const DB_PATH = path.join(DATA_DIR, "schedules.json");
-const MESSAGES_PATH = path.join(DATA_DIR, "messages.json");
-const NAMES_PATH = path.join(ROOT_DIR, "names.json");
-const AUTH_PATH = path.join(ROOT_DIR, "auth.json");
+const DATA_FILE_PATH = path.join(ROOT_DIR, "data.json");
+const LEGACY_DB_PATH = path.join(DATA_DIR, "schedules.json");
+const LEGACY_MESSAGES_PATH = path.join(DATA_DIR, "messages.json");
+const LEGACY_ATTENDANCE_PATH = path.join(DATA_DIR, "attendance.json");
+const LEGACY_NAMES_PATH = path.join(ROOT_DIR, "names.json");
+const LEGACY_AUTH_PATH = path.join(ROOT_DIR, "auth.json");
 const PORT = Number(process.env.PORT || 3000);
 const TIME_ZONE = "Asia/Seoul";
 const MIN_ALLOWED_MINUTES = 15 * 60;
 const MAX_ALLOWED_MINUTES = 24 * 60;
-const ROOM_NUMBERS = Array.from({ length: 15 }, (_, index) => String(201 + index));
+const ROOM_NUMBERS = Array.from({ length: 20 }, (_, index) => String(201 + index));
 const SLOT_NUMBERS = [1, 2, 3, 4];
 const SESSION_COOKIE_NAME = "gisook_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
@@ -54,6 +56,19 @@ const MIME_TYPES = {
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+};
+
+const PERSON_NAME_ALIASES = {
+  "강선우1(1학년)": "강선우 1",
+  "강선우2(2학년)": "강선우 2",
+  강선우1: "강선우 1",
+  강선우2: "강선우 2",
+  심지호: "심지후",
+  장예현: "장예헌",
+  서정오: "서정호",
+  김인호: "김인후",
+  현솔온: "현준호",
+  현솔윤: "현준호",
 };
 
 bootstrapFiles();
@@ -114,8 +129,12 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
   }
 
   if (req.method === "POST" && pathname === "/api/auth/login") {
+    if (session) {
+      throwHttpError(409, "이미 로그인 중입니다. 다른 계정으로 로그인하려면 먼저 로그아웃하세요.");
+    }
+
     const payload = await readJsonBody(req);
-    const requestedName = String(payload?.name || "").trim();
+    const requestedName = canonicalizeKnownPersonName(payload?.name || "");
     const password = String(payload?.password || "");
     const roster = readRoster();
     const authConfig = readPreparedAuthConfig(roster);
@@ -125,11 +144,11 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
 
     let role = null;
     let loginName = "";
-    if (requestedName === authConfig.wardenName && password === authConfig.wardenPassword) {
+    if (requestedName === canonicalizeKnownPersonName(authConfig.wardenName) && password === authConfig.wardenPassword) {
       role = "warden";
       loginName = authConfig.wardenName;
     } else {
-      const person = roster.find((candidate) => candidate.name === requestedName);
+      const person = findRosterPersonByName(roster, requestedName);
       if (person && password === authConfig.studentPasswords[person.name]) {
         role = "student";
         loginName = person.name;
@@ -189,10 +208,17 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
   }
 
   if (req.method === "GET" && pathname === "/api/config") {
+    const roster = readRoster();
+    const authConfig = readPreparedAuthConfig(roster);
+    const people =
+      session.role === "warden" ? roster : [assertAllowedPerson(session.loginName, roster)];
+
     sendJson(res, 200, {
       role: session.role,
       loginName: session.loginName || "",
-      people: readRoster(),
+      people,
+      authNames: roster.map((person) => person.name),
+      wardenName: authConfig.wardenName,
       weekdays: WEEKDAYS,
       rooms: ROOM_NUMBERS,
       slots: SLOT_NUMBERS,
@@ -203,6 +229,11 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
 
   if (req.method === "GET" && pathname === "/api/dashboard") {
     sendJson(res, 200, buildDashboardResponse());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/attendance/toggle") {
+    sendJson(res, 200, toggleAttendanceForCurrentUser(session));
     return;
   }
 
@@ -235,6 +266,13 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
   }
 
   const adminStudentMatch = pathname.match(/^\/api\/admin\/students\/(.+)$/);
+  if (adminStudentMatch && req.method === "PUT") {
+    assertWardenSession(session);
+    const payload = await readJsonBody(req);
+    sendJson(res, 200, updateStudentProfile(adminStudentMatch[1], payload));
+    return;
+  }
+
   if (adminStudentMatch && req.method === "DELETE") {
     assertWardenSession(session);
     sendJson(res, 200, deleteStudent(adminStudentMatch[1]));
@@ -248,13 +286,13 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
 
   const userName = userMatch[1];
   if (req.method === "GET") {
-    sendJson(res, 200, buildUserResponse(userName));
+    sendJson(res, 200, buildUserResponse(session, userName));
     return;
   }
 
   if (req.method === "PUT") {
     const payload = await readJsonBody(req);
-    sendJson(res, 200, saveUserSchedule(userName, payload));
+    sendJson(res, 200, saveUserSchedule(session, userName, payload));
     return;
   }
 
@@ -296,21 +334,21 @@ function bootstrapFiles() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  if (!fs.existsSync(AUTH_PATH)) {
-    fs.writeFileSync(AUTH_PATH, JSON.stringify(getDefaultAuthDocument(), null, 2));
+  if (!fs.existsSync(LEGACY_AUTH_PATH)) {
+    fs.writeFileSync(LEGACY_AUTH_PATH, JSON.stringify(getDefaultAuthDocument(), null, 2));
   }
 
-  if (!fs.existsSync(NAMES_PATH)) {
-    fs.writeFileSync(NAMES_PATH, JSON.stringify(getDefaultRosterDocument(), null, 2));
+  if (!fs.existsSync(LEGACY_NAMES_PATH)) {
+    fs.writeFileSync(LEGACY_NAMES_PATH, JSON.stringify(getDefaultRosterDocument(), null, 2));
   }
 
-  if (!fs.existsSync(DB_PATH)) {
+  if (!fs.existsSync(LEGACY_DB_PATH)) {
     const roster = normalizeRosterDocument(getDefaultRosterDocument());
-    writeJsonFile(DB_PATH, createEmptyDatabase(roster));
+    writeJsonFile(LEGACY_DB_PATH, createEmptyDatabase(roster));
   }
 
-  if (!fs.existsSync(MESSAGES_PATH)) {
-    writeJsonFile(MESSAGES_PATH, getDefaultMessagesDocument());
+  if (!fs.existsSync(LEGACY_MESSAGES_PATH)) {
+    writeJsonFile(LEGACY_MESSAGES_PATH, getDefaultMessagesDocument());
   }
 
   const roster = readRoster();
@@ -326,7 +364,7 @@ function getDefaultAuthDocument() {
 }
 
 function readAuthConfig() {
-  const raw = readJsonFile(AUTH_PATH);
+  const raw = readJsonFile(LEGACY_AUTH_PATH);
   return {
     wardenName: String(raw?.wardenName || "사감"),
     wardenPassword: String(raw?.wardenPassword || "사감1"),
@@ -338,8 +376,13 @@ function readAuthConfig() {
 }
 
 function readPreparedAuthConfig(roster) {
-  const raw = readJsonFile(AUTH_PATH);
+  const raw = readJsonFile(LEGACY_AUTH_PATH);
   const normalized = normalizeAuthConfig(raw, roster);
+  const rawStudentPasswordCount =
+    raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
+      ? Object.keys(raw.studentPasswords).length
+      : 0;
+  const shouldPreserveExistingPasswords = roster.length === 0 && rawStudentPasswordCount > 0;
   const normalizedJson = JSON.stringify(normalized);
   const rawJson = JSON.stringify({
     wardenName: String(raw?.wardenName || "사감"),
@@ -350,11 +393,20 @@ function readPreparedAuthConfig(roster) {
         : {},
   });
 
-  if (normalizedJson !== rawJson) {
+  if (!shouldPreserveExistingPasswords && normalizedJson !== rawJson) {
     writeAuthConfig(normalized);
   }
 
-  return normalized;
+  return shouldPreserveExistingPasswords
+    ? {
+        wardenName: String(raw?.wardenName || "사감"),
+        wardenPassword: String(raw?.wardenPassword || "사감1"),
+        studentPasswords:
+          raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
+            ? raw.studentPasswords
+            : {},
+      }
+    : normalized;
 }
 
 function normalizeAuthConfig(raw, roster) {
@@ -364,9 +416,13 @@ function normalizeAuthConfig(raw, roster) {
       ? raw.studentPasswords
       : {};
 
+  const normalizedRawPasswords = Object.fromEntries(
+    Object.entries(rawPasswords).map(([name, password]) => [canonicalizeKnownPersonName(name), String(password ?? "")]),
+  );
+
   const studentPasswords = Object.fromEntries(
     roster.map((person) => {
-      const storedPassword = rawPasswords[person.name];
+      const storedPassword = normalizedRawPasswords[person.name];
       return [person.name, String(storedPassword ?? legacyPassword ?? "3141")];
     }),
   );
@@ -379,7 +435,7 @@ function normalizeAuthConfig(raw, roster) {
 }
 
 function writeAuthConfig(config) {
-  writeJsonFile(AUTH_PATH, {
+  writeJsonFile(LEGACY_AUTH_PATH, {
     wardenName: String(config?.wardenName || "사감"),
     wardenPassword: String(config?.wardenPassword || "사감1"),
     studentPasswords:
@@ -392,6 +448,138 @@ function writeAuthConfig(config) {
 function getDefaultMessagesDocument() {
   return {
     messages: [],
+  };
+}
+
+function getDefaultAttendanceDocument() {
+  return {
+    records: {},
+  };
+}
+
+function getDefaultDataDocument() {
+  const roster = normalizeRosterDocument(getDefaultRosterDocument());
+  return {
+    auth: normalizeAuthConfig(getDefaultAuthDocument(), roster),
+    roster: createStoredRosterDocument(roster),
+    schedules: createEmptyDatabase(roster),
+    messages: getDefaultMessagesDocument(),
+    attendance: getDefaultAttendanceDocument(),
+  };
+}
+
+function buildInitialDataDocument() {
+  const rosterSource = readLegacyJsonFile(LEGACY_NAMES_PATH, getDefaultRosterDocument());
+  const roster = normalizeRosterDocument(rosterSource);
+
+  return normalizeDataDocument({
+    auth: readLegacyJsonFile(LEGACY_AUTH_PATH, getDefaultAuthDocument()),
+    roster: createStoredRosterDocument(roster),
+    schedules: readLegacyJsonFile(LEGACY_DB_PATH, createEmptyDatabase(roster)),
+    messages: readLegacyJsonFile(LEGACY_MESSAGES_PATH, getDefaultMessagesDocument()),
+    attendance: readLegacyJsonFile(LEGACY_ATTENDANCE_PATH, getDefaultAttendanceDocument()),
+  });
+}
+
+function readLegacyJsonFile(filePath, fallback) {
+  if (!fs.existsSync(filePath)) {
+    return fallback;
+  }
+
+  try {
+    return readJsonFile(filePath);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function normalizeDataDocument(raw) {
+  const rosterSource =
+    raw?.roster && typeof raw.roster === "object" && !Array.isArray(raw.roster)
+      ? raw.roster
+      : raw?.people
+        ? { people: raw.people }
+        : getDefaultRosterDocument();
+  const roster = normalizeRosterDocument(rosterSource);
+
+  return {
+    auth: normalizeAuthConfig(raw?.auth, roster),
+    roster: createStoredRosterDocument(roster),
+    schedules: normalizeDatabaseDocument(raw?.schedules, roster),
+    messages: normalizeMessagesDocument(raw?.messages),
+    attendance: normalizeAttendanceDocument(raw?.attendance),
+  };
+}
+
+function readDataDocument() {
+  const fallback = getDefaultDataDocument();
+  const raw = fs.existsSync(DATA_FILE_PATH) ? readJsonFile(DATA_FILE_PATH) : fallback;
+  const normalized = normalizeDataDocument(raw);
+
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    writeDataDocument(normalized);
+  }
+
+  return normalized;
+}
+
+function writeDataDocument(data) {
+  writeJsonFile(DATA_FILE_PATH, normalizeDataDocument(data));
+}
+
+function normalizeDatabaseDocument(raw, roster = []) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return createEmptyDatabase(roster);
+  }
+
+  const rawUsers = raw.users && typeof raw.users === "object" && !Array.isArray(raw.users) ? raw.users : {};
+  const normalizedUsers = Object.fromEntries(
+    Object.entries(rawUsers).map(([name, userRecord]) => [canonicalizeKnownPersonName(name), userRecord]),
+  );
+
+  return {
+    users: normalizedUsers,
+  };
+}
+
+function normalizeMessagesDocument(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return getDefaultMessagesDocument();
+  }
+
+  return {
+    messages: Array.isArray(raw.messages)
+      ? raw.messages.map((message) =>
+          message && typeof message === "object" && !Array.isArray(message)
+            ? {
+                ...message,
+                senderName: canonicalizeKnownPersonName(message.senderName || ""),
+              }
+            : message,
+        )
+      : [],
+  };
+}
+
+function normalizeAttendanceDocument(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return getDefaultAttendanceDocument();
+  }
+
+  return {
+    records:
+      raw.records && typeof raw.records === "object" && !Array.isArray(raw.records)
+        ? Object.fromEntries(
+            Object.entries(raw.records).map(([dateKey, record]) => [
+              dateKey,
+              record && typeof record === "object" && !Array.isArray(record)
+                ? Object.fromEntries(
+                    Object.entries(record).map(([name, checked]) => [canonicalizeKnownPersonName(name), checked]),
+                  )
+                : {},
+            ]),
+          )
+        : {},
   };
 }
 
@@ -476,9 +664,9 @@ function expireSessionCookie() {
   return `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
-function buildUserResponse(userName) {
+function buildUserResponse(session, userName) {
   const roster = readRoster();
-  const person = assertAllowedPerson(userName, roster);
+  const person = assertSessionCanAccessUser(session, userName, roster);
   const now = getCurrentLocalParts();
   const database = readPreparedDatabase(now, roster);
   const userRecord = database.users[person.name];
@@ -498,9 +686,9 @@ function buildUserResponse(userName) {
   };
 }
 
-function saveUserSchedule(userName, payload) {
+function saveUserSchedule(session, userName, payload) {
   const roster = readRoster();
-  const person = assertAllowedPerson(userName, roster);
+  const person = assertSessionCanAccessUser(session, userName, roster);
 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throwHttpError(400, "잘못된 저장 요청입니다.");
@@ -529,7 +717,6 @@ function saveUserSchedule(userName, payload) {
   database.users[person.name] = {
     profile: {
       room: person.room,
-      slot: person.slot,
     },
     intervals: intervals.map(({ day, start, end, reason, outing, phone }) => ({
       day,
@@ -548,13 +735,14 @@ function saveUserSchedule(userName, payload) {
   };
   writeDatabase(database);
 
-  return buildUserResponse(person.name);
+  return buildUserResponse(session, person.name);
 }
 
 function buildDashboardResponse() {
   const roster = readRoster();
   const now = getCurrentLocalParts();
   const database = readPreparedDatabase(now, roster);
+  const attendanceDateKey = formatDateKey(now);
 
   const users = roster.map((person) => {
     const userRecord = database.users[person.name];
@@ -573,6 +761,7 @@ function buildDashboardResponse() {
       statusLabel: status.statusLabel,
       currentInterval: status.currentInterval,
       currentOvernight: status.currentOvernight,
+      attendanceChecked: false,
       updatedAt: userRecord?.updatedAt || null,
     };
   });
@@ -606,11 +795,13 @@ function buildDashboardResponse() {
     out: users.filter((user) => user.isOut).length,
     phone: users.filter((user) => user.isPhoneOnly).length,
     overnight: users.filter((user) => user.isOvernight).length,
+    attendanceChecked: users.filter((user) => user.attendanceChecked).length,
   };
 
   return {
     generatedAt: formatNowLabel(now),
     timeZone: TIME_ZONE,
+    attendanceDateKey,
     rooms,
     users,
     totals,
@@ -682,6 +873,41 @@ function createWardenMessage(session, payload) {
   };
 }
 
+function toggleAttendanceForCurrentUser(session) {
+  if (!session || session.role !== "student") {
+    throwHttpError(403, "학생만 출석체크를 할 수 있습니다.");
+  }
+
+  const roster = readRoster();
+  const person = assertAllowedPerson(session.loginName, roster);
+  const now = getCurrentLocalParts();
+  const attendanceDocument = readPreparedAttendance(now, roster);
+  const attendanceDateKey = formatDateKey(now);
+  const nextDayRecord =
+    attendanceDocument.records?.[attendanceDateKey] &&
+    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
+    !Array.isArray(attendanceDocument.records[attendanceDateKey])
+      ? { ...attendanceDocument.records[attendanceDateKey] }
+      : {};
+
+  if (nextDayRecord[person.name]) {
+    delete nextDayRecord[person.name];
+  } else {
+    nextDayRecord[person.name] = true;
+  }
+
+  attendanceDocument.records = {
+    [attendanceDateKey]: nextDayRecord,
+  };
+  writeAttendance(attendanceDocument);
+
+  return {
+    name: person.name,
+    attendanceDateKey,
+    checked: Boolean(nextDayRecord[person.name]),
+  };
+}
+
 function changeOwnPassword(session, payload) {
   if (!session || !session.loginName) {
     throwHttpError(401, "로그인이 필요합니다.");
@@ -734,7 +960,6 @@ function createStudent(payload) {
   const roster = readRoster();
   const name = String(payload.name || "").trim();
   const room = String(payload.room || "").trim();
-  const slot = Number(payload.slot);
   const grade = Number(payload.grade);
 
   if (!name) {
@@ -749,72 +974,132 @@ function createStudent(payload) {
     throwHttpError(400, "호실이 올바르지 않습니다.");
   }
 
-  if (!SLOT_NUMBERS.includes(slot)) {
-    throwHttpError(400, "자리가 올바르지 않습니다.");
-  }
-
   if (![1, 2, 3].includes(grade)) {
     throwHttpError(400, "학년은 1, 2, 3만 가능합니다.");
   }
 
-  const password = String(payload.password ?? "3141");
-  if (!password) {
-    throwHttpError(400, "초기 비밀번호를 입력해주세요.");
-  }
-
-  if (password.length > 100) {
-    throwHttpError(400, "비밀번호는 100자 이하로 입력해주세요.");
-  }
+  const password = "3141";
 
   if (roster.some((person) => person.name === name)) {
     throwHttpError(400, "이미 있는 이름입니다.");
   }
 
-  if (roster.some((person) => person.room === room && person.slot === slot)) {
-    throwHttpError(400, "해당 호실 자리는 이미 사용 중입니다.");
-  }
+  assertRoomCapacity(roster, room);
 
-  const nextRoster = [...roster, { name, room, slot, grade }].sort(compareRosterPeople);
+  const nextRoster = [...roster, { name, room, grade }];
   writeRoster(nextRoster);
+  const normalizedRoster = readRoster();
+  const addedStudent = assertAllowedPerson(name, normalizedRoster);
 
   const database = readDatabase();
   database.users[name] = {
-    profile: { room, slot },
+    profile: { room },
     intervals: [],
     overnights: [],
     updatedAt: null,
   };
   writeDatabase(database);
 
-  const authConfig = readPreparedAuthConfig(nextRoster);
+  const authConfig = readPreparedAuthConfig(normalizedRoster);
   authConfig.studentPasswords[name] = password;
   writeAuthConfig(authConfig);
 
   return {
-    added: { name, room, slot, grade },
-    people: nextRoster,
+    added: addedStudent,
+    people: normalizedRoster,
+  };
+}
+
+function updateStudentProfile(userName, payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throwHttpError(400, "학생 수정 요청 형식이 올바르지 않습니다.");
+  }
+
+  const roster = readRoster();
+  const person = assertAllowedPerson(userName, roster);
+  const nextName = String(payload.name || "").trim();
+  const room = String(payload.room || "").trim();
+  const grade = Number(payload.grade);
+  const authConfig = readPreparedAuthConfig(roster);
+
+  if (!nextName) {
+    throwHttpError(400, "?대쫫???낅젰?댁＜?몄슂.");
+  }
+
+  if (nextName.length > 30) {
+    throwHttpError(400, "?대쫫? 30???댄븯濡??낅젰?댁＜?몄슂.");
+  }
+
+  if (nextName !== person.name && roster.some((candidate) => candidate.name === nextName)) {
+    throwHttpError(400, "?대? ?덈뒗 ?대쫫?낅땲??");
+  }
+
+  if (!ROOM_NUMBERS.includes(room)) {
+    throwHttpError(400, "호실이 올바르지 않습니다.");
+  }
+
+  if (![1, 2, 3].includes(grade)) {
+    throwHttpError(400, "학년은 1, 2, 3만 가능합니다.");
+  }
+
+  assertRoomCapacity(roster, room, person.name);
+
+  const nextRoster = roster.map((candidate) => {
+    if (candidate.name !== person.name) {
+      return candidate;
+    }
+
+    return {
+      ...candidate,
+      name: nextName,
+      room,
+      grade,
+      ...(candidate.room === room ? { slot: candidate.slot } : {}),
+    };
+  });
+
+  writeRoster(nextRoster);
+  const normalizedRoster = readRoster();
+  const database = readDatabase();
+  const existingUserRecord =
+    database.users[person.name] && typeof database.users[person.name] === "object" && !Array.isArray(database.users[person.name])
+      ? database.users[person.name]
+      : {
+          profile: { room: person.room },
+          intervals: [],
+          overnights: [],
+          updatedAt: null,
+        };
+
+  if (nextName !== person.name) {
+    delete database.users[person.name];
+  }
+
+  database.users[nextName] = {
+    ...existingUserRecord,
+    profile: { room },
+  };
+  writeDatabase(database);
+
+  if (nextName !== person.name) {
+    authConfig.studentPasswords[nextName] = authConfig.studentPasswords[person.name] || "3141";
+    delete authConfig.studentPasswords[person.name];
+    renameStudentMessages(person.name, nextName);
+    renameStudentAttendance(person.name, nextName);
+    renameStudentSessions(person.name, nextName);
+  }
+  writeAuthConfig(authConfig);
+
+  readPreparedDatabase(getCurrentLocalParts(), normalizedRoster);
+
+  return {
+    updated: assertAllowedPerson(nextName, normalizedRoster),
+    people: normalizedRoster,
   };
 }
 
 function updateStudentPassword(userName, payload) {
-  const roster = readRoster();
-  const person = assertAllowedPerson(userName, roster);
-  const nextPassword = String(payload?.password || "");
-  if (!nextPassword) {
-    throwHttpError(400, "새 비밀번호를 입력해주세요.");
-  }
-
-  if (nextPassword.length > 100) {
-    throwHttpError(400, "비밀번호는 100자 이하로 입력해주세요.");
-  }
-
-  const authConfig = readPreparedAuthConfig(roster);
-  authConfig.studentPasswords[person.name] = nextPassword;
-  writeAuthConfig(authConfig);
-
-  return {
-    updatedName: person.name,
-  };
+  throwHttpError(410, "학생 비밀번호 변경은 비활성화되어 있습니다.");
 }
 
 function deleteStudent(userName) {
@@ -842,14 +1127,109 @@ function deleteStudent(userName) {
   };
 }
 
+function renameStudentMessages(previousName, nextName) {
+  if (!previousName || !nextName || previousName === nextName) {
+    return;
+  }
+
+  const document = readMessages();
+  let changed = false;
+  document.messages = document.messages.map((message) => {
+    if (!message || typeof message !== "object" || message.senderName !== previousName) {
+      return message;
+    }
+
+    changed = true;
+    return {
+      ...message,
+      senderName: nextName,
+    };
+  });
+
+  if (changed) {
+    writeMessages(document);
+  }
+}
+
+function renameStudentAttendance(previousName, nextName) {
+  if (!previousName || !nextName || previousName === nextName) {
+    return;
+  }
+
+  const document = readAttendance();
+  let changed = false;
+  const nextRecords = {};
+
+  for (const [dateKey, record] of Object.entries(document.records || {})) {
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      nextRecords[dateKey] = {};
+      continue;
+    }
+
+    const nextRecord = { ...record };
+    if (Object.prototype.hasOwnProperty.call(nextRecord, previousName)) {
+      nextRecord[nextName] = nextRecord[previousName];
+      delete nextRecord[previousName];
+      changed = true;
+    }
+    nextRecords[dateKey] = nextRecord;
+  }
+
+  if (changed) {
+    writeAttendance({
+      records: nextRecords,
+    });
+  }
+}
+
+function renameStudentSessions(previousName, nextName) {
+  if (!previousName || !nextName || previousName === nextName) {
+    return;
+  }
+
+  for (const [token, session] of authSessions.entries()) {
+    if (!session || typeof session !== "object" || session.loginName !== previousName) {
+      continue;
+    }
+
+    authSessions.set(token, {
+      ...session,
+      loginName: nextName,
+    });
+  }
+}
+
 function readRoster() {
-  return normalizeRosterDocument(readJsonFile(NAMES_PATH));
+  const raw = readJsonFile(LEGACY_NAMES_PATH);
+  const normalized = normalizeRosterDocument(raw);
+  const normalizedDocument = createStoredRosterDocument(normalized);
+
+  if (JSON.stringify(raw) !== JSON.stringify(normalizedDocument)) {
+    writeJsonFile(LEGACY_NAMES_PATH, normalizedDocument);
+  }
+
+  return normalized;
 }
 
 function writeRoster(people) {
-  writeJsonFile(NAMES_PATH, {
-    people: [...people].sort(compareRosterPeople),
-  });
+  writeJsonFile(LEGACY_NAMES_PATH, createStoredRosterDocument(people));
+}
+
+function normalizePersonNameSpacing(name) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/([가-힣])\s+(?=[가-힣])/g, "$1");
+}
+
+function canonicalizeKnownPersonName(name) {
+  const normalizedName = normalizePersonNameSpacing(name);
+  return PERSON_NAME_ALIASES[normalizedName] || normalizedName;
+}
+
+function findRosterPersonByName(roster, userName) {
+  const canonicalName = canonicalizeKnownPersonName(userName);
+  return roster.find((candidate) => candidate.name === canonicalName) || null;
 }
 
 function normalizeRosterDocument(raw) {
@@ -867,11 +1247,11 @@ function normalizeRosterDocument(raw) {
       continue;
     }
 
-    const name = String(person.name || "").trim();
+    const name = canonicalizeKnownPersonName(person.name);
     const room = String(person.room || "").trim();
     const slot = Number(person.slot);
     const grade = Number(person.grade);
-    if (!name || !room || !Number.isInteger(slot) || slot < 1 || slot > 4) {
+    if (!name || !ROOM_NUMBERS.includes(room)) {
       continue;
     }
 
@@ -883,13 +1263,13 @@ function normalizeRosterDocument(raw) {
     normalized.push({
       name,
       room,
-      slot,
-      grade: Number.isInteger(grade) ? grade : null,
+      legacySlot: SLOT_NUMBERS.includes(slot) ? slot : null,
+      grade: [1, 2, 3].includes(grade) ? grade : null,
+      sourceIndex: normalized.length,
     });
   }
 
-  normalized.sort(compareRosterPeople);
-  return normalized;
+  return assignRosterSlots(normalized);
 }
 
 function createLegacyRosterEntry(name, index) {
@@ -911,7 +1291,6 @@ function createEmptyDatabase(roster) {
         {
           profile: {
             room: person.room,
-            slot: person.slot,
           },
           intervals: [],
           overnights: [],
@@ -962,8 +1341,8 @@ function getDefaultRosterDocument() {
       { name: "홍현세", room: "210", slot: 4 },
       { name: "강지용", room: "211", slot: 1 },
       { name: "이호진", room: "211", slot: 3 },
-      { name: "현솔윤", room: "211", slot: 4 },
-      { name: "장예현", room: "212", slot: 1 },
+      { name: "현준호", room: "211", slot: 4 },
+      { name: "장예헌", room: "212", slot: 1 },
       { name: "서정호", room: "212", slot: 2 },
       { name: "여상민", room: "212", slot: 3 },
       { name: "정병수", room: "213", slot: 1 },
@@ -1001,33 +1380,58 @@ function readPreparedDatabase(now, roster) {
 }
 
 function readDatabase() {
-  const raw = readJsonFile(DB_PATH);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { users: {} };
-  }
-
-  return {
-    users: raw.users && typeof raw.users === "object" && !Array.isArray(raw.users) ? raw.users : {},
-  };
+  const raw = readJsonFile(LEGACY_DB_PATH);
+  return normalizeDatabaseDocument(raw);
 }
 
 function writeDatabase(data) {
-  writeJsonFile(DB_PATH, data);
+  writeJsonFile(LEGACY_DB_PATH, normalizeDatabaseDocument(data));
 }
 
 function readMessages() {
-  const raw = readJsonFile(MESSAGES_PATH);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return getDefaultMessagesDocument();
-  }
-
-  return {
-    messages: Array.isArray(raw.messages) ? raw.messages : [],
-  };
+  const raw = readJsonFile(LEGACY_MESSAGES_PATH);
+  return normalizeMessagesDocument(raw);
 }
 
 function writeMessages(data) {
-  writeJsonFile(MESSAGES_PATH, data);
+  writeJsonFile(LEGACY_MESSAGES_PATH, normalizeMessagesDocument(data));
+}
+
+function readAttendance() {
+  const raw = readJsonFile(LEGACY_ATTENDANCE_PATH);
+  return normalizeAttendanceDocument(raw);
+}
+
+function writeAttendance(data) {
+  writeJsonFile(LEGACY_ATTENDANCE_PATH, normalizeAttendanceDocument(data));
+}
+
+function readPreparedAttendance(now, roster) {
+  const raw = readAttendance();
+  const attendanceDateKey = formatDateKey(now);
+  const allowedNames = new Set(roster.map((person) => person.name));
+  const rawTodayRecord =
+    raw.records?.[attendanceDateKey] &&
+    typeof raw.records[attendanceDateKey] === "object" &&
+    !Array.isArray(raw.records[attendanceDateKey])
+      ? raw.records[attendanceDateKey]
+      : {};
+
+  const normalizedTodayRecord = Object.fromEntries(
+    Object.entries(rawTodayRecord).filter(([name, checked]) => allowedNames.has(name) && Boolean(checked)),
+  );
+
+  const normalized = {
+    records: {
+      [attendanceDateKey]: normalizedTodayRecord,
+    },
+  };
+
+  if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
+    writeAttendance(normalized);
+  }
+
+  return normalized;
 }
 
 function readJsonFile(filePath) {
@@ -1045,7 +1449,7 @@ function syncRosterProfiles(database, roster) {
     const existing = database.users[person.name];
     if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
       database.users[person.name] = {
-        profile: { room: person.room, slot: person.slot },
+        profile: { room: person.room },
         intervals: [],
         overnights: [],
         updatedAt: null,
@@ -1054,10 +1458,9 @@ function syncRosterProfiles(database, roster) {
       continue;
     }
 
-    const currentRoom = String(existing.profile?.room || "");
-    const currentSlot = Number(existing.profile?.slot || 0);
-    if (currentRoom !== person.room || currentSlot !== person.slot) {
-      existing.profile = { room: person.room, slot: person.slot };
+    const nextProfile = { room: person.room };
+    if (JSON.stringify(existing.profile || {}) !== JSON.stringify(nextProfile)) {
+      existing.profile = nextProfile;
       changed = true;
     }
   }
@@ -1369,18 +1772,120 @@ function compareRosterPeople(left, right) {
   if (left.room !== right.room) {
     return left.room.localeCompare(right.room);
   }
-  return left.slot - right.slot;
+  if (left.slot !== right.slot) {
+    return left.slot - right.slot;
+  }
+  return left.name.localeCompare(right.name, "ko");
+}
+
+function compareRosterPlacement(left, right) {
+  const leftSlot = Number.isInteger(left.legacySlot) ? left.legacySlot : Number.MAX_SAFE_INTEGER;
+  const rightSlot = Number.isInteger(right.legacySlot) ? right.legacySlot : Number.MAX_SAFE_INTEGER;
+
+  if (leftSlot !== rightSlot) {
+    return leftSlot - rightSlot;
+  }
+
+  if (left.sourceIndex !== right.sourceIndex) {
+    return left.sourceIndex - right.sourceIndex;
+  }
+
+  return left.name.localeCompare(right.name, "ko");
+}
+
+function assignRosterSlots(people) {
+  const groupedByRoom = new Map();
+  for (const person of people) {
+    const roomPeople = groupedByRoom.get(person.room) || [];
+    roomPeople.push(person);
+    groupedByRoom.set(person.room, roomPeople);
+  }
+
+  const assigned = [];
+  for (const room of ROOM_NUMBERS) {
+    const roomPeople = groupedByRoom.get(room);
+    if (!roomPeople?.length) {
+      continue;
+    }
+
+    roomPeople
+      .sort(compareRosterPlacement)
+      .forEach((person, index) => {
+        assigned.push({
+          name: person.name,
+          room: person.room,
+          slot: SLOT_NUMBERS[index] || index + 1,
+          grade: person.grade,
+        });
+      });
+  }
+
+  return assigned.sort(compareRosterPeople);
+}
+
+function createStoredRosterDocument(people) {
+  return {
+    people: assignRosterSlots(
+      (Array.isArray(people) ? people : [])
+        .map((person, index) => {
+          if (!person || typeof person !== "object") {
+            return null;
+          }
+
+          const name = canonicalizeKnownPersonName(person.name);
+          const room = String(person.room || "").trim();
+          const slot = Number(person.slot);
+          const grade = Number(person.grade);
+          if (!name || !ROOM_NUMBERS.includes(room)) {
+            return null;
+          }
+
+          return {
+            name,
+            room,
+            legacySlot: SLOT_NUMBERS.includes(slot) ? slot : null,
+            grade: [1, 2, 3].includes(grade) ? grade : null,
+            sourceIndex: index,
+          };
+        })
+        .filter(Boolean),
+    ).map(({ name, room, grade }) => ({
+      name,
+      room,
+      ...(Number.isInteger(grade) ? { grade } : {}),
+    })),
+  };
+}
+
+function assertRoomCapacity(roster, room, excludedName = "") {
+  const occupancy = roster.filter((person) => person.room === room && person.name !== excludedName).length;
+  if (occupancy >= SLOT_NUMBERS.length) {
+    throwHttpError(400, "해당 호실은 이미 정원이 가득 찼습니다.");
+  }
 }
 
 function assertAllowedPerson(userName, roster) {
-  const normalizedName = String(userName || "").trim();
+  const normalizedName = canonicalizeKnownPersonName(userName);
   if (!normalizedName) {
     throwHttpError(400, "이름을 입력해주세요.");
   }
 
-  const person = roster.find((candidate) => candidate.name === normalizedName);
+  const person = findRosterPersonByName(roster, normalizedName);
   if (!person) {
     throwHttpError(403, "names.json에 있는 이름만 수정할 수 있습니다.");
+  }
+
+  return person;
+}
+
+function assertSessionCanAccessUser(session, userName, roster) {
+  const person = assertAllowedPerson(userName, roster);
+  if (session?.role === "warden") {
+    return person;
+  }
+
+  if (!session?.loginName || person.name !== session.loginName) {
+    throwHttpError(403, "다른 계정 정보는 볼 수 없습니다. 로그아웃 후 해당 계정으로 다시 로그인하세요.");
   }
 
   return person;
@@ -1479,4 +1984,12 @@ function newHttpError(statusCode, message) {
 
 function throwHttpError(statusCode, message) {
   throw newHttpError(statusCode, message);
+}
+
+function toggleAttendanceForCurrentUser(session) {
+  if (!session || session.role !== "student") {
+    throwHttpError(403, "?숈깮留?異쒖꽍泥댄겕瑜??????덉뒿?덈떎.");
+  }
+
+  throwHttpError(410, "출석 체크는 프론트엔드에서만 처리됩니다. 페이지를 새로고침해주세요.");
 }

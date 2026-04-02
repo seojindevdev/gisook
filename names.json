@@ -3,319 +3,261 @@
     {
       "name": "함병국",
       "room": "201",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "김원우",
       "room": "201",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "한수영",
       "room": "201",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "김태흔",
       "room": "201",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "송창민",
       "room": "202",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "한성률",
       "room": "202",
-      "slot": 2,
       "grade": 1
     },
     {
-      "name": "강선우2(2학년)",
+      "name": "강선우 2",
       "room": "202",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "강준혁",
       "room": "202",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "조원혁",
       "room": "203",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "채민준",
       "room": "203",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "노우혁",
       "room": "203",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "황성찬",
       "room": "204",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "정연우",
       "room": "204",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "이원교",
       "room": "204",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "노건호",
       "room": "204",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "지연우",
       "room": "205",
-      "slot": 1,
       "grade": 1
     },
     {
-      "name": "김인호",
+      "name": "김인후",
       "room": "205",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "강정일",
       "room": "205",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "오성윤",
       "room": "205",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "홍현준",
       "room": "206",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "구본영",
       "room": "206",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "이현명",
       "room": "206",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "송호경",
       "room": "206",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "민주원",
       "room": "207",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "김세훈",
       "room": "207",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "현정우",
       "room": "207",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "노우석",
       "room": "207",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "임성환",
       "room": "208",
-      "slot": 1,
       "grade": 2
     },
     {
       "name": "이승민",
       "room": "208",
-      "slot": 2,
       "grade": 3
     },
     {
       "name": "김서진",
       "room": "208",
-      "slot": 3,
       "grade": 1
     },
     {
-      "name": "강태영",
+      "name": "강선우 1",
       "room": "209",
-      "slot": 1,
-      "grade": 1
-    },
-    {
-      "name": "강선우1(1학년)",
-      "room": "209",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "양민우",
       "room": "209",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "장하윤",
       "room": "209",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "한민성",
       "room": "210",
-      "slot": 1,
       "grade": 2
     },
     {
       "name": "홍현세",
       "room": "210",
-      "slot": 2,
       "grade": 3
     },
     {
       "name": "강지용",
       "room": "211",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "이호진",
       "room": "211",
-      "slot": 2,
       "grade": 1
     },
     {
-      "name": "현솔온",
+      "name": "현준호",
       "room": "211",
-      "slot": 3,
       "grade": 1
     },
     {
-      "name": "장예현",
+      "name": "장예헌",
       "room": "212",
-      "slot": 1,
       "grade": 1
     },
     {
-      "name": "서정오",
+      "name": "서정호",
       "room": "212",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "이상민",
       "room": "212",
-      "slot": 3,
       "grade": 1
     },
     {
       "name": "김범수",
       "room": "213",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "현승효",
       "room": "213",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "임재현",
       "room": "213",
-      "slot": 3,
       "grade": 1
     },
     {
       "name": "김정욱",
       "room": "213",
-      "slot": 4,
       "grade": 3
     },
     {
       "name": "안시율",
       "room": "214",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "오현준",
       "room": "214",
-      "slot": 2,
       "grade": 3
     },
     {
       "name": "김예범",
       "room": "214",
-      "slot": 3,
       "grade": 3
     },
     {
       "name": "심지후",
       "room": "215",
-      "slot": 1,
       "grade": 1
     },
     {
       "name": "김지호",
       "room": "215",
-      "slot": 2,
       "grade": 1
     },
     {
       "name": "고유빈",
       "room": "215",
-      "slot": 3,
       "grade": 2
     },
     {
       "name": "김현우",
       "room": "215",
-      "slot": 4,
       "grade": 3
     }
   ]

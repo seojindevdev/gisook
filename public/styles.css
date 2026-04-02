@@ -45,7 +45,8 @@ select {
 .top-row,
 .tabs,
 .day-tabs,
-.actions {
+.actions,
+.dashboard-filters {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -55,6 +56,13 @@ select {
 #nameInput {
   flex: 1;
   min-width: 180px;
+}
+
+.role-badge {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #999999;
 }
 
 button,
@@ -71,7 +79,8 @@ button {
 }
 
 .tab-button.is-active,
-.day-button.is-active {
+.day-button.is-active,
+.dashboard-filter-button.is-active {
   background: #111111;
   color: #ffffff;
 }
@@ -113,6 +122,28 @@ td {
 
 .reason-input {
   min-width: 180px;
+}
+
+.text-input,
+.message-textarea {
+  width: 100%;
+  min-width: 180px;
+}
+
+.message-composer {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.password-box {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.messages-scope {
+  margin-bottom: 12px;
 }
 
 .toggle-cell {
@@ -240,6 +271,7 @@ option.blocked-option {
 .slot-number {
   padding: 8px 10px;
   border-right: 1px solid #eeeeee;
+  text-align: center;
 }
 
 .slot-name-wrap {

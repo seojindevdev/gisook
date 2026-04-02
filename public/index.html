@@ -10,6 +10,7 @@
     <div id="authGate" class="auth-gate">
       <div class="auth-box">
         <div class="auth-title">비밀번호 입력</div>
+        <select id="authNameInput"></select>
         <input id="passwordInput" type="password" placeholder="비밀번호" autocomplete="current-password" />
         <button id="loginButton" type="button">입장</button>
         <div id="authMessage" class="auth-message"></div>
@@ -18,10 +19,10 @@
 
     <div id="appShell" class="app-shell hidden">
       <div class="top-row">
-        <input id="nameInput" list="nameSuggestions" placeholder="이름" autocomplete="off" />
-        <datalist id="nameSuggestions"></datalist>
+        <select id="nameInput"></select>
         <button id="loadUserButton" type="button">불러오기</button>
         <button id="saveUserButton" type="button">저장</button>
+        <div id="roleBadge" class="role-badge"></div>
         <button id="logoutButton" type="button">로그아웃</button>
       </div>
 
@@ -29,6 +30,9 @@
         <button id="settingsTabButton" class="tab-button is-active" type="button">설정</button>
         <button id="overnightTabButton" class="tab-button" type="button">외박</button>
         <button id="dashboardTabButton" class="tab-button" type="button">현황</button>
+        <button id="passwordTabButton" class="tab-button" type="button">비밀번호</button>
+        <button id="messagesTabButton" class="tab-button" type="button">사감문자</button>
+        <button id="adminTabButton" class="tab-button hidden" type="button">사감모드</button>
       </div>
 
       <section id="settingsTab" class="tab-panel is-active">
@@ -86,8 +90,76 @@
       </section>
 
       <section id="dashboardTab" class="tab-panel">
+        <div id="dashboardFilters" class="dashboard-filters">
+          <button class="dashboard-filter-button is-active" type="button" data-dashboard-filter="ALL">전체</button>
+          <button class="dashboard-filter-button" type="button" data-dashboard-filter="GRADE_1">1학년</button>
+          <button class="dashboard-filter-button" type="button" data-dashboard-filter="GRADE_2">2학년</button>
+          <button class="dashboard-filter-button" type="button" data-dashboard-filter="GRADE_3">3학년</button>
+          <button class="dashboard-filter-button" type="button" data-dashboard-filter="OUT">외출</button>
+          <button class="dashboard-filter-button" type="button" data-dashboard-filter="OVERNIGHT">외박</button>
+        </div>
         <div id="summaryLine"></div>
         <div id="dashboardBoard" class="dashboard-board"></div>
+      </section>
+
+      <section id="passwordTab" class="tab-panel">
+        <div class="password-box">
+          <input id="currentPasswordInput" type="password" placeholder="현재 비밀번호" autocomplete="current-password" />
+          <input id="newPasswordInput" type="password" placeholder="새 비밀번호" autocomplete="new-password" />
+          <input id="confirmPasswordInput" type="password" placeholder="새 비밀번호 확인" autocomplete="new-password" />
+          <button id="changePasswordButton" type="button">비밀번호 변경</button>
+        </div>
+      </section>
+
+      <section id="messagesTab" class="tab-panel">
+        <div id="messageComposer" class="message-composer">
+          <select id="messageSenderInput"></select>
+          <textarea id="wardenMessageInput" class="message-textarea" rows="4" placeholder="사감께 보낼 내용을 입력"></textarea>
+          <button id="sendWardenMessageButton" type="button">보내기</button>
+        </div>
+        <div id="messagesScopeLabel" class="messages-scope"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>시간</th>
+                <th>보낸 사람</th>
+                <th>내용</th>
+              </tr>
+            </thead>
+            <tbody id="messageRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="adminTab" class="tab-panel hidden">
+        <div class="actions">
+          <input id="adminNameInput" class="text-input" type="text" placeholder="이름" />
+          <select id="adminRoomInput"></select>
+          <select id="adminSlotInput"></select>
+          <select id="adminGradeInput">
+            <option value="1">1학년</option>
+            <option value="2">2학년</option>
+            <option value="3">3학년</option>
+          </select>
+          <input id="adminPasswordInput" class="text-input" type="text" value="3141" placeholder="초기 비밀번호" />
+          <button id="adminAddButton" type="button">학생 추가</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>호실</th>
+                <th>자리</th>
+                <th>학년</th>
+                <th>비밀번호 변경</th>
+                <th>삭제</th>
+              </tr>
+            </thead>
+            <tbody id="adminStudentRows"></tbody>
+          </table>
+        </div>
       </section>
 
       <div id="messageBox" class="message-box hidden"></div>

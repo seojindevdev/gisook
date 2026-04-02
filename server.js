@@ -8,6 +8,7 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const DATA_DIR = path.join(ROOT_DIR, "data");
 const DB_PATH = path.join(DATA_DIR, "schedules.json");
+const MESSAGES_PATH = path.join(DATA_DIR, "messages.json");
 const NAMES_PATH = path.join(ROOT_DIR, "names.json");
 const AUTH_PATH = path.join(ROOT_DIR, "auth.json");
 const PORT = Number(process.env.PORT || 3000);
@@ -84,40 +85,85 @@ async function handleRequest(req, res) {
   const pathname = decodeURIComponent(requestUrl.pathname);
 
   if (pathname.startsWith("/api/")) {
-    await handleApiRequest(req, res, pathname);
+    await handleApiRequest(req, res, pathname, requestUrl);
     return;
   }
 
   serveStatic(req, res, pathname);
 }
 
-async function handleApiRequest(req, res, pathname) {
+async function handleApiRequest(req, res, pathname, requestUrl) {
+  const session = getAuthenticatedSession(req);
+
+  if (req.method === "GET" && pathname === "/api/auth/options") {
+    const authConfig = readPreparedAuthConfig(readRoster());
+    sendJson(res, 200, {
+      names: readRoster().map((person) => person.name),
+      wardenName: authConfig.wardenName,
+    });
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/api/auth/status") {
     sendJson(res, 200, {
-      authenticated: isAuthenticatedRequest(req),
+      authenticated: Boolean(session),
+      role: session?.role || null,
+      loginName: session?.loginName || null,
     });
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/auth/login") {
     const payload = await readJsonBody(req);
+    const requestedName = String(payload?.name || "").trim();
     const password = String(payload?.password || "");
-    if (password !== readAuthConfig().password) {
+    const roster = readRoster();
+    const authConfig = readPreparedAuthConfig(roster);
+    if (!requestedName) {
+      throwHttpError(400, "이름을 선택하세요.");
+    }
+
+    let role = null;
+    let loginName = "";
+    if (requestedName === authConfig.wardenName && password === authConfig.wardenPassword) {
+      role = "warden";
+      loginName = authConfig.wardenName;
+    } else {
+      const person = roster.find((candidate) => candidate.name === requestedName);
+      if (person && password === authConfig.studentPasswords[person.name]) {
+        role = "student";
+        loginName = person.name;
+      }
+    }
+
+    if (!role || !loginName) {
       throwHttpError(401, "비밀번호가 올바르지 않습니다.");
     }
 
     const token = createSessionToken();
-    authSessions.set(token, Date.now() + SESSION_TTL_MS);
+    authSessions.set(token, {
+      expiresAt: Date.now() + SESSION_TTL_MS,
+      role,
+      loginName,
+    });
     sendJson(
       res,
       200,
       {
         authenticated: true,
+        role,
+        loginName,
       },
       {
         "Set-Cookie": serializeSessionCookie(token),
       },
     );
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/change-password") {
+    const payload = await readJsonBody(req);
+    sendJson(res, 200, changeOwnPassword(session, payload));
     return;
   }
 
@@ -128,6 +174,8 @@ async function handleApiRequest(req, res, pathname) {
       200,
       {
         authenticated: false,
+        role: null,
+        loginName: null,
       },
       {
         "Set-Cookie": expireSessionCookie(),
@@ -136,12 +184,14 @@ async function handleApiRequest(req, res, pathname) {
     return;
   }
 
-  if (!isAuthenticatedRequest(req)) {
+  if (!session) {
     throwHttpError(401, "비밀번호를 입력해야 접근할 수 있습니다.");
   }
 
   if (req.method === "GET" && pathname === "/api/config") {
     sendJson(res, 200, {
+      role: session.role,
+      loginName: session.loginName || "",
       people: readRoster(),
       weekdays: WEEKDAYS,
       rooms: ROOM_NUMBERS,
@@ -153,6 +203,41 @@ async function handleApiRequest(req, res, pathname) {
 
   if (req.method === "GET" && pathname === "/api/dashboard") {
     sendJson(res, 200, buildDashboardResponse());
+    return;
+  }
+
+  if (pathname === "/api/messages") {
+    if (req.method === "GET") {
+      sendJson(res, 200, buildMessagesResponse(session, requestUrl.searchParams));
+      return;
+    }
+
+    if (req.method === "POST") {
+      const payload = await readJsonBody(req);
+      sendJson(res, 200, createWardenMessage(session, payload));
+      return;
+    }
+  }
+
+  if (pathname === "/api/admin/students" && req.method === "POST") {
+    assertWardenSession(session);
+    const payload = await readJsonBody(req);
+    sendJson(res, 200, createStudent(payload));
+    return;
+  }
+
+  const adminStudentPasswordMatch = pathname.match(/^\/api\/admin\/students\/(.+)\/password$/);
+  if (adminStudentPasswordMatch && req.method === "PUT") {
+    assertWardenSession(session);
+    const payload = await readJsonBody(req);
+    sendJson(res, 200, updateStudentPassword(adminStudentPasswordMatch[1], payload));
+    return;
+  }
+
+  const adminStudentMatch = pathname.match(/^\/api\/admin\/students\/(.+)$/);
+  if (adminStudentMatch && req.method === "DELETE") {
+    assertWardenSession(session);
+    sendJson(res, 200, deleteStudent(adminStudentMatch[1]));
     return;
   }
 
@@ -193,6 +278,9 @@ function serveStatic(req, res, pathname) {
 
   res.writeHead(200, {
     "Content-Type": MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
   });
 
   if (req.method === "HEAD") {
@@ -218,20 +306,92 @@ function bootstrapFiles() {
 
   if (!fs.existsSync(DB_PATH)) {
     const roster = normalizeRosterDocument(getDefaultRosterDocument());
-    fs.writeFileSync(DB_PATH, JSON.stringify(createEmptyDatabase(roster), null, 2));
+    writeJsonFile(DB_PATH, createEmptyDatabase(roster));
   }
+
+  if (!fs.existsSync(MESSAGES_PATH)) {
+    writeJsonFile(MESSAGES_PATH, getDefaultMessagesDocument());
+  }
+
+  const roster = readRoster();
+  readPreparedAuthConfig(roster);
 }
 
 function getDefaultAuthDocument() {
   return {
-    password: "3141",
+    wardenName: "사감",
+    wardenPassword: "사감1",
+    studentPasswords: {},
   };
 }
 
 function readAuthConfig() {
   const raw = readJsonFile(AUTH_PATH);
   return {
-    password: String(raw?.password || "3141"),
+    wardenName: String(raw?.wardenName || "사감"),
+    wardenPassword: String(raw?.wardenPassword || "사감1"),
+    studentPasswords:
+      raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
+        ? raw.studentPasswords
+        : {},
+  };
+}
+
+function readPreparedAuthConfig(roster) {
+  const raw = readJsonFile(AUTH_PATH);
+  const normalized = normalizeAuthConfig(raw, roster);
+  const normalizedJson = JSON.stringify(normalized);
+  const rawJson = JSON.stringify({
+    wardenName: String(raw?.wardenName || "사감"),
+    wardenPassword: String(raw?.wardenPassword || "사감1"),
+    studentPasswords:
+      raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
+        ? raw.studentPasswords
+        : {},
+  });
+
+  if (normalizedJson !== rawJson) {
+    writeAuthConfig(normalized);
+  }
+
+  return normalized;
+}
+
+function normalizeAuthConfig(raw, roster) {
+  const legacyPassword = String(raw?.studentPassword || raw?.password || "3141");
+  const rawPasswords =
+    raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
+      ? raw.studentPasswords
+      : {};
+
+  const studentPasswords = Object.fromEntries(
+    roster.map((person) => {
+      const storedPassword = rawPasswords[person.name];
+      return [person.name, String(storedPassword ?? legacyPassword ?? "3141")];
+    }),
+  );
+
+  return {
+    wardenName: String(raw?.wardenName || "사감"),
+    wardenPassword: String(raw?.wardenPassword || "사감1"),
+    studentPasswords,
+  };
+}
+
+function writeAuthConfig(config) {
+  writeJsonFile(AUTH_PATH, {
+    wardenName: String(config?.wardenName || "사감"),
+    wardenPassword: String(config?.wardenPassword || "사감1"),
+    studentPasswords:
+      config?.studentPasswords && typeof config.studentPasswords === "object" && !Array.isArray(config.studentPasswords)
+        ? config.studentPasswords
+        : {},
+  });
+}
+
+function getDefaultMessagesDocument() {
+  return {
+    messages: [],
   };
 }
 
@@ -239,22 +399,30 @@ function createSessionToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
-function isAuthenticatedRequest(req) {
+function getAuthenticatedSession(req) {
   cleanupExpiredSessions();
   const cookies = parseCookies(req.headers.cookie || "");
   const token = cookies[SESSION_COOKIE_NAME];
   if (!token) {
-    return false;
+    return null;
   }
 
-  const expiresAt = authSessions.get(token);
-  if (!expiresAt || expiresAt <= Date.now()) {
+  const session = authSessions.get(token);
+  if (!session || typeof session !== "object" || session.expiresAt <= Date.now()) {
     authSessions.delete(token);
-    return false;
+    return null;
   }
 
-  authSessions.set(token, Date.now() + SESSION_TTL_MS);
-  return true;
+  const nextSession = {
+    ...session,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  };
+  authSessions.set(token, nextSession);
+  return nextSession;
+}
+
+function isAuthenticatedRequest(req) {
+  return Boolean(getAuthenticatedSession(req));
 }
 
 function clearSession(req) {
@@ -267,10 +435,16 @@ function clearSession(req) {
 
 function cleanupExpiredSessions() {
   const now = Date.now();
-  for (const [token, expiresAt] of authSessions.entries()) {
-    if (expiresAt <= now) {
+  for (const [token, session] of authSessions.entries()) {
+    if (!session || typeof session !== "object" || session.expiresAt <= now) {
       authSessions.delete(token);
     }
+  }
+}
+
+function assertWardenSession(session) {
+  if (!session || session.role !== "warden") {
+    throwHttpError(403, "사감 모드에서만 사용할 수 있습니다.");
   }
 }
 
@@ -392,6 +566,7 @@ function buildDashboardResponse() {
       name: person.name,
       room: person.room,
       slot: person.slot,
+      grade: person.grade,
       isOut: status.isOut,
       isPhoneOnly: status.isPhoneOnly,
       isOvernight: status.isOvernight,
@@ -408,12 +583,13 @@ function buildDashboardResponse() {
       const user = users.find((candidate) => candidate.room === room && candidate.slot === slot);
       return (
         user || {
-          name: "",
-          room,
-          slot,
-          empty: true,
-          isOut: false,
-          isPhoneOnly: false,
+           name: "",
+           room,
+           slot,
+           grade: null,
+           empty: true,
+           isOut: false,
+           isPhoneOnly: false,
           isOvernight: false,
           statusLabel: "빈자리",
           currentInterval: null,
@@ -441,8 +617,239 @@ function buildDashboardResponse() {
   };
 }
 
+function buildMessagesResponse(session, searchParams) {
+  const roster = readRoster();
+  const senderName = String(searchParams?.get("senderName") || "").trim();
+  const messages = readMessages()
+    .messages
+    .map((message, index) => {
+      try {
+        return normalizeStoredMessage(message, index);
+      } catch (_error) {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+  if (session.role === "warden") {
+    const filtered = senderName ? messages.filter((message) => message.senderName === senderName) : messages;
+    return {
+      role: session.role,
+      senderName,
+      messages: filtered,
+    };
+  }
+
+  const person = assertAllowedPerson(session.loginName, roster);
+  return {
+    role: session.role,
+    senderName: person.name,
+    messages: messages.filter((message) => message.senderName === person.name),
+  };
+}
+
+function createWardenMessage(session, payload) {
+  if (!session || session.role !== "student") {
+    throwHttpError(403, "학생 모드에서만 보낼 수 있습니다.");
+  }
+
+  const roster = readRoster();
+  const sender = assertAllowedPerson(session.loginName, roster);
+  const text = String(payload?.text || "").trim();
+  if (!text) {
+    throwHttpError(400, "메시지를 입력해주세요.");
+  }
+
+  if (text.length > 500) {
+    throwHttpError(400, "메시지는 500자 이하로 입력해주세요.");
+  }
+
+  const document = readMessages();
+  const message = {
+    id: createSessionToken(),
+    senderName: sender.name,
+    text,
+    createdAt: new Date().toISOString(),
+  };
+  document.messages.push(message);
+  writeMessages(document);
+
+  return {
+    role: session.role,
+    senderName: sender.name,
+    message,
+  };
+}
+
+function changeOwnPassword(session, payload) {
+  if (!session || !session.loginName) {
+    throwHttpError(401, "로그인이 필요합니다.");
+  }
+
+  const roster = readRoster();
+  const authConfig = readPreparedAuthConfig(roster);
+  const currentPassword = String(payload?.currentPassword || "");
+  const nextPassword = String(payload?.newPassword || "");
+
+  if (!nextPassword) {
+    throwHttpError(400, "새 비밀번호를 입력해주세요.");
+  }
+
+  if (nextPassword.length > 100) {
+    throwHttpError(400, "비밀번호는 100자 이하로 입력해주세요.");
+  }
+
+  if (session.role === "warden") {
+    if (currentPassword !== authConfig.wardenPassword) {
+      throwHttpError(401, "현재 비밀번호가 올바르지 않습니다.");
+    }
+
+    authConfig.wardenPassword = nextPassword;
+    writeAuthConfig(authConfig);
+    return {
+      role: session.role,
+      loginName: session.loginName,
+    };
+  }
+
+  const person = assertAllowedPerson(session.loginName, roster);
+  if (currentPassword !== authConfig.studentPasswords[person.name]) {
+    throwHttpError(401, "현재 비밀번호가 올바르지 않습니다.");
+  }
+
+  authConfig.studentPasswords[person.name] = nextPassword;
+  writeAuthConfig(authConfig);
+  return {
+    role: session.role,
+    loginName: session.loginName,
+  };
+}
+
+function createStudent(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throwHttpError(400, "학생 추가 요청 형식이 올바르지 않습니다.");
+  }
+
+  const roster = readRoster();
+  const name = String(payload.name || "").trim();
+  const room = String(payload.room || "").trim();
+  const slot = Number(payload.slot);
+  const grade = Number(payload.grade);
+
+  if (!name) {
+    throwHttpError(400, "이름을 입력해주세요.");
+  }
+
+  if (name.length > 30) {
+    throwHttpError(400, "이름은 30자 이하로 입력해주세요.");
+  }
+
+  if (!ROOM_NUMBERS.includes(room)) {
+    throwHttpError(400, "호실이 올바르지 않습니다.");
+  }
+
+  if (!SLOT_NUMBERS.includes(slot)) {
+    throwHttpError(400, "자리가 올바르지 않습니다.");
+  }
+
+  if (![1, 2, 3].includes(grade)) {
+    throwHttpError(400, "학년은 1, 2, 3만 가능합니다.");
+  }
+
+  const password = String(payload.password ?? "3141");
+  if (!password) {
+    throwHttpError(400, "초기 비밀번호를 입력해주세요.");
+  }
+
+  if (password.length > 100) {
+    throwHttpError(400, "비밀번호는 100자 이하로 입력해주세요.");
+  }
+
+  if (roster.some((person) => person.name === name)) {
+    throwHttpError(400, "이미 있는 이름입니다.");
+  }
+
+  if (roster.some((person) => person.room === room && person.slot === slot)) {
+    throwHttpError(400, "해당 호실 자리는 이미 사용 중입니다.");
+  }
+
+  const nextRoster = [...roster, { name, room, slot, grade }].sort(compareRosterPeople);
+  writeRoster(nextRoster);
+
+  const database = readDatabase();
+  database.users[name] = {
+    profile: { room, slot },
+    intervals: [],
+    overnights: [],
+    updatedAt: null,
+  };
+  writeDatabase(database);
+
+  const authConfig = readPreparedAuthConfig(nextRoster);
+  authConfig.studentPasswords[name] = password;
+  writeAuthConfig(authConfig);
+
+  return {
+    added: { name, room, slot, grade },
+    people: nextRoster,
+  };
+}
+
+function updateStudentPassword(userName, payload) {
+  const roster = readRoster();
+  const person = assertAllowedPerson(userName, roster);
+  const nextPassword = String(payload?.password || "");
+  if (!nextPassword) {
+    throwHttpError(400, "새 비밀번호를 입력해주세요.");
+  }
+
+  if (nextPassword.length > 100) {
+    throwHttpError(400, "비밀번호는 100자 이하로 입력해주세요.");
+  }
+
+  const authConfig = readPreparedAuthConfig(roster);
+  authConfig.studentPasswords[person.name] = nextPassword;
+  writeAuthConfig(authConfig);
+
+  return {
+    updatedName: person.name,
+  };
+}
+
+function deleteStudent(userName) {
+  const roster = readRoster();
+  const person = assertAllowedPerson(userName, roster);
+  const nextRoster = roster.filter((candidate) => candidate.name !== person.name);
+  writeRoster(nextRoster);
+
+  const database = readDatabase();
+  delete database.users[person.name];
+  writeDatabase(database);
+
+  const authConfig = readPreparedAuthConfig(roster);
+  delete authConfig.studentPasswords[person.name];
+  writeAuthConfig({
+    ...authConfig,
+    studentPasswords: Object.fromEntries(
+      Object.entries(authConfig.studentPasswords).filter(([name]) => name !== person.name),
+    ),
+  });
+
+  return {
+    deletedName: person.name,
+    people: nextRoster,
+  };
+}
+
 function readRoster() {
   return normalizeRosterDocument(readJsonFile(NAMES_PATH));
+}
+
+function writeRoster(people) {
+  writeJsonFile(NAMES_PATH, {
+    people: [...people].sort(compareRosterPeople),
+  });
 }
 
 function normalizeRosterDocument(raw) {
@@ -463,6 +870,7 @@ function normalizeRosterDocument(raw) {
     const name = String(person.name || "").trim();
     const room = String(person.room || "").trim();
     const slot = Number(person.slot);
+    const grade = Number(person.grade);
     if (!name || !room || !Number.isInteger(slot) || slot < 1 || slot > 4) {
       continue;
     }
@@ -472,7 +880,12 @@ function normalizeRosterDocument(raw) {
     }
 
     seenNames.add(name);
-    normalized.push({ name, room, slot });
+    normalized.push({
+      name,
+      room,
+      slot,
+      grade: Number.isInteger(grade) ? grade : null,
+    });
   }
 
   normalized.sort(compareRosterPeople);
@@ -486,6 +899,7 @@ function createLegacyRosterEntry(name, index) {
     name,
     room,
     slot,
+    grade: null,
   };
 }
 
@@ -598,11 +1012,30 @@ function readDatabase() {
 }
 
 function writeDatabase(data) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+  writeJsonFile(DB_PATH, data);
+}
+
+function readMessages() {
+  const raw = readJsonFile(MESSAGES_PATH);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return getDefaultMessagesDocument();
+  }
+
+  return {
+    messages: Array.isArray(raw.messages) ? raw.messages : [],
+  };
+}
+
+function writeMessages(data) {
+  writeJsonFile(MESSAGES_PATH, data);
 }
 
 function readJsonFile(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
+}
+
+function writeJsonFile(filePath, data) {
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
 }
 
 function syncRosterProfiles(database, roster) {
@@ -761,6 +1194,27 @@ function normalizeStoredOvernight(overnight, index) {
   }
 
   return { day, reason, targetDate };
+}
+
+function normalizeStoredMessage(message, index) {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    throwHttpError(400, `${index + 1}번째 메시지 형식이 올바르지 않습니다.`);
+  }
+
+  const senderName = String(message.senderName || "").trim();
+  const text = String(message.text || "").trim();
+  const createdAt = String(message.createdAt || "").trim();
+  const id = String(message.id || "").trim() || createSessionToken();
+
+  if (!senderName || !text || !createdAt) {
+    throwHttpError(400, `${index + 1}번째 메시지 형식이 올바르지 않습니다.`);
+  }
+
+  if (Number.isNaN(Date.parse(createdAt))) {
+    throwHttpError(400, `${index + 1}번째 메시지 시간이 올바르지 않습니다.`);
+  }
+
+  return { id, senderName, text, createdAt };
 }
 
 function normalizeIncomingOvernight(overnight, index, now) {

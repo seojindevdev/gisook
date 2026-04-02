@@ -22,6 +22,7 @@ const state = {
   selectedDay: getCurrentSeoulWeekdayKey(),
   activeTab: "settings",
   dashboardRooms: [],
+  dashboardFilter: "ALL",
   saveTimerId: null,
   saveRequestToken: 0,
   hasUnsavedChanges: false,
@@ -44,7 +45,6 @@ function cacheElements() {
   elements.logoutButton = document.querySelector("#logoutButton");
   elements.authMessage = document.querySelector("#authMessage");
   elements.nameInput = document.querySelector("#nameInput");
-  elements.nameSuggestions = document.querySelector("#nameSuggestions");
   elements.loadUserButton = document.querySelector("#loadUserButton");
   elements.saveUserButton = document.querySelector("#saveUserButton");
   elements.settingsTabButton = document.querySelector("#settingsTabButton");
@@ -61,6 +61,7 @@ function cacheElements() {
   elements.overnightRows = document.querySelector("#overnightRows");
   elements.chartContainer = document.querySelector("#chartContainer");
   elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
   elements.summaryLine = document.querySelector("#summaryLine");
   elements.dashboardBoard = document.querySelector("#dashboardBoard");
   elements.messageBox = document.querySelector("#messageBox");
@@ -82,6 +83,9 @@ function bindEvents() {
 
   elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
   elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
 
   elements.nameInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -129,6 +133,7 @@ function bindEvents() {
 
   elements.overnightRows.addEventListener("input", handleOvernightChange);
   elements.overnightRows.addEventListener("click", handleOvernightCancel);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
 
   elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
   elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
@@ -190,8 +195,9 @@ function switchTab(tabName) {
 }
 
 function renderNameOptions() {
-  elements.nameSuggestions.innerHTML = state.people
-    .map((person) => `<option value="${escapeHtml(person.name)}"></option>`)
+  elements.nameInput.innerHTML = [...state.people]
+    .sort((left, right) => left.name.localeCompare(right.name, "ko"))
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
     .join("");
 }
 
@@ -578,8 +584,7 @@ async function refreshDashboard() {
     }
 
     state.dashboardRooms = payload.rooms || [];
-    elements.summaryLine.textContent =
-      `전체 ${payload.totals.total} / 재실 ${payload.totals.present} / 외출 ${payload.totals.out} / 폰 ${payload.totals.phone} / 외박 ${payload.totals.overnight}`;
+    renderDashboardSummary();
     renderDashboardBoard();
   } catch (error) {
     setMessage(error.message, true);
@@ -587,8 +592,9 @@ async function refreshDashboard() {
 }
 
 function renderDashboardBoard() {
-  const leftRooms = state.dashboardRooms.slice(0, 7);
-  const rightRooms = state.dashboardRooms.slice(7);
+  const visibleRooms = getFilteredDashboardRooms();
+  const leftRooms = visibleRooms.filter((room) => Number(room.room) <= 207);
+  const rightRooms = visibleRooms.filter((room) => Number(room.room) >= 208);
   elements.dashboardBoard.innerHTML = `
     <div class="board-column">${leftRooms.map(renderRoomCard).join("")}</div>
     <div class="board-column">${rightRooms.map(renderRoomCard).join("")}</div>
@@ -596,13 +602,85 @@ function renderDashboardBoard() {
 }
 
 function renderRoomCard(room) {
-  const visibleOccupants = room.occupants.filter((occupant) => !occupant.empty);
   return `
     <div class="room-card">
       <div class="room-title">${escapeHtml(room.room)}</div>
-      ${visibleOccupants.map(renderRoomSlot).join("")}
+      ${room.occupants.map(renderRoomSlot).join("")}
     </div>
   `;
+}
+
+function handleDashboardFilterClick(event) {
+  const button = event.target.closest("[data-dashboard-filter]");
+  if (!button) {
+    return;
+  }
+
+  state.dashboardFilter = button.dataset.dashboardFilter || "ALL";
+  updateDashboardFilterButtons();
+  renderDashboardSummary();
+  renderDashboardBoard();
+}
+
+function updateDashboardFilterButtons() {
+  elements.dashboardFilters.querySelectorAll("[data-dashboard-filter]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.dashboardFilter === state.dashboardFilter);
+  });
+}
+
+function getFilteredDashboardRooms() {
+  return state.dashboardRooms
+    .map((room) => ({
+      ...room,
+      occupants: room.occupants.filter(matchesDashboardFilter),
+    }))
+    .filter((room) => room.occupants.length > 0);
+}
+
+function matchesDashboardFilter(occupant) {
+  if (occupant.empty) {
+    return false;
+  }
+
+  if (state.dashboardFilter === "ALL") {
+    return true;
+  }
+
+  if (state.dashboardFilter === "GRADE_1") {
+    return occupant.grade === 1;
+  }
+
+  if (state.dashboardFilter === "GRADE_2") {
+    return occupant.grade === 2;
+  }
+
+  if (state.dashboardFilter === "GRADE_3") {
+    return occupant.grade === 3;
+  }
+
+  if (state.dashboardFilter === "OUT") {
+    return occupant.isOut;
+  }
+
+  if (state.dashboardFilter === "OVERNIGHT") {
+    return occupant.isOvernight;
+  }
+
+  return true;
+}
+
+function renderDashboardSummary() {
+  const allUsers = state.dashboardRooms
+    .flatMap((room) => room.occupants)
+    .filter((occupant) => !occupant.empty);
+  const visibleCount = getFilteredDashboardRooms().flatMap((room) => room.occupants).length;
+  const total = allUsers.length;
+  const present = allUsers.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length;
+  const out = allUsers.filter((user) => user.isOut).length;
+  const phone = allUsers.filter((user) => user.isPhoneOnly).length;
+  const overnight = allUsers.filter((user) => user.isOvernight).length;
+  const visiblePrefix = state.dashboardFilter === "ALL" ? "" : `표시 ${visibleCount} / `;
+  elements.summaryLine.textContent = `${visiblePrefix}전체 ${total} / 재실 ${present} / 외출 ${out} / 폰 ${phone} / 외박 ${overnight}`;
 }
 
 function renderRoomSlot(occupant) {
@@ -636,10 +714,11 @@ function renderRoomSlot(occupant) {
   const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
   const nameLabel = occupant.empty ? "" : occupant.name;
   const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
+  const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
 
   return `
     <div class="room-slot">
-      <div class="slot-number">${occupant.slot}</div>
+      <div class="slot-number">${gradeLabel}</div>
       <div class="${wrapClass}">
         <div class="${nameClass}">${escapeHtml(nameLabel)}</div>
         ${popover}
@@ -1471,10 +1550,2764 @@ async function refreshDashboard() {
   try {
     const payload = await fetchJson("/api/dashboard");
     state.dashboardRooms = payload.rooms || [];
-    elements.summaryLine.textContent =
-      `전체 ${payload.totals.total} / 재실 ${payload.totals.present} / 외출 ${payload.totals.out} / 폰 ${payload.totals.phone} / 외박 ${payload.totals.overnight}`;
+    renderDashboardSummary();
     renderDashboardBoard();
   } catch (error) {
     setMessage(error.message, true);
   }
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "loginName")) {
+    state.loginName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "authNames")) {
+    state.authNames = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "wardenName")) {
+    state.wardenName = "사감";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 더 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.userRole === "warden") {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentDelete);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+function renderAuthNameOptions() {
+  const options = [];
+  if (state.wardenName) {
+    options.push(state.wardenName);
+  }
+  for (const name of [...state.authNames].sort((left, right) => left.localeCompare(right, "ko"))) {
+    if (!options.includes(name)) {
+      options.push(name);
+    }
+  }
+
+  elements.authNameInput.innerHTML = options
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
+
+  const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
+  const nextName = options.includes(savedName) ? savedName : options[0] || "";
+  elements.authNameInput.value = nextName;
+}
+
+async function loadAuthOptions() {
+  const payload = await fetchJson("/api/auth/options", {}, { allowUnauthorized: true });
+  state.authNames = Array.isArray(payload.names) ? payload.names : [];
+  state.wardenName = String(payload.wardenName || "사감");
+  renderAuthNameOptions();
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function renderMessageSenderOptions() {
+  if (state.userRole === "warden") {
+    const savedName = String(localStorage.getItem("messageSenderName") || "").trim();
+    const options = ['<option value="">전체</option>'].concat(
+      getSortedPeople().map(
+        (person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`,
+      ),
+    );
+    elements.messageSenderInput.innerHTML = options.join("");
+    elements.messageSenderInput.value = getSortedPeople().some((person) => person.name === savedName) ? savedName : "";
+    state.messageSenderName = String(elements.messageSenderInput.value || "");
+    return;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  elements.messageSenderInput.innerHTML = loginName
+    ? `<option value="${escapeHtml(loginName)}">${escapeHtml(loginName)}</option>`
+    : "";
+  elements.messageSenderInput.value = loginName;
+  state.messageSenderName = loginName;
+}
+
+function ensureMessageSenderSelection() {
+  if (state.userRole === "warden") {
+    const selected = getSelectedMessageSender();
+    state.messageSenderName = selected;
+    return selected;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  state.messageSenderName = loginName;
+  elements.messageSenderInput.value = loginName;
+  return loginName;
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  }
+
+  renderMessagesScope();
+}
+
+function renderMessagesScope() {
+  if (state.userRole === "warden") {
+    elements.messagesScopeLabel.textContent = state.messageSenderName
+      ? `사감 모드: ${state.messageSenderName} 기록 ${state.messages.length}건`
+      : `사감 모드: 전체 ${state.messages.length}건`;
+    return;
+  }
+
+  elements.messagesScopeLabel.textContent = `보낸 사람: ${state.loginName || "없음"} / 내 기록 ${state.messages.length}건`;
+}
+
+async function loadMessages() {
+  if (!state.authenticated) {
+    return;
+  }
+
+  try {
+    let url = "/api/messages";
+    if (state.userRole === "warden") {
+      const senderName = ensureMessageSenderSelection();
+      if (senderName) {
+        url = `/api/messages?senderName=${encodeURIComponent(senderName)}`;
+      }
+    } else {
+      ensureMessageSenderSelection();
+    }
+
+    const payload = await fetchJson(url);
+    state.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    if (payload.senderName) {
+      state.messageSenderName = payload.senderName;
+    }
+    renderMessagesScope();
+    renderMessageRows();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function sendWardenMessage() {
+  if (!state.authenticated) {
+    handleUnauthorized("비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  if (state.userRole !== "student") {
+    setMessage("학생 모드에서만 보낼 수 있습니다.", true);
+    return;
+  }
+
+  const senderName = ensureMessageSenderSelection();
+  const text = String(elements.wardenMessageInput.value || "").trim();
+  if (!senderName) {
+    setMessage("로그인한 이름이 없습니다.", true);
+    return;
+  }
+  if (!text) {
+    setMessage("메시지를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        senderName,
+        text,
+      }),
+    });
+    elements.wardenMessageInput.value = "";
+    await loadMessages();
+    setMessage("사감문자를 보냈습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function showAuthGate() {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  elements.authGate.classList.remove("hidden");
+  elements.appShell.classList.add("hidden");
+  renderAuthNameOptions();
+  elements.passwordInput.focus();
+}
+
+function handleUnauthorized(message) {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  setAuthMessage(message || "비밀번호를 입력해야 접근할 수 있습니다.");
+  showAuthGate();
+}
+
+async function restoreSession() {
+  try {
+    const payload = await fetchJson("/api/auth/status", {}, { allowUnauthorized: true });
+    if (!payload.authenticated) {
+      showAuthGate();
+      return;
+    }
+
+    await finishLogin(payload.role || "student", payload.loginName || "");
+  } catch (error) {
+    showAuthGate();
+    setAuthMessage(error.message);
+  }
+}
+
+async function finishLogin(role = "student", loginName = "") {
+  ensureExtendedState();
+  state.authenticated = true;
+  state.userRole = role || "student";
+  state.loginName = loginName || "";
+  if (state.loginName) {
+    localStorage.setItem("authSelectedName", state.loginName);
+    elements.authNameInput.value = state.loginName;
+  }
+  showAppShell();
+  applyRoleMode();
+  await loadProtectedData();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = payload.people || [];
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    state.people.find((person) => person.name === savedName)?.name ||
+    state.people.find((person) => person.name === state.loginName)?.name ||
+    state.people[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+async function login() {
+  const name = String(elements.authNameInput.value || "").trim();
+  const password = String(elements.passwordInput.value || "").trim();
+  if (!name) {
+    setAuthMessage("이름을 선택하세요.");
+    return;
+  }
+  if (!password) {
+    setAuthMessage("비밀번호를 입력하세요.");
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, password }),
+      },
+      { allowUnauthorized: true },
+    );
+
+    localStorage.setItem("authSelectedName", name);
+    elements.passwordInput.value = "";
+    clearAuthMessage();
+    await finishLogin(payload.role || "student", payload.loginName || name);
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" }, { allowUnauthorized: true });
+  } catch (_error) {
+    // Ignore logout failures and clear the local view anyway.
+  }
+
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage("로그아웃되었습니다.");
+}
+
+async function initialize() {
+  ensureExtendedState();
+  renderDayButtons();
+  renderScheduleRows();
+  renderOvernightRows();
+  renderChart();
+  renderMessageRows();
+  renderAdminStudentRows();
+  clearMessage();
+  clearAuthMessage();
+  await loadAuthOptions();
+  await restoreSession();
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "loginName")) {
+    state.loginName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "authNames")) {
+    state.authNames = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "wardenName")) {
+    state.wardenName = "사감";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.passwordTabButton = document.querySelector("#passwordTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.passwordTab = document.querySelector("#passwordTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.currentPasswordInput = document.querySelector("#currentPasswordInput");
+  elements.newPasswordInput = document.querySelector("#newPasswordInput");
+  elements.confirmPasswordInput = document.querySelector("#confirmPasswordInput");
+  elements.changePasswordButton = document.querySelector("#changePasswordButton");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminPasswordInput = document.querySelector("#adminPasswordInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.passwordTabButton.addEventListener("click", () => switchTab("password"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 더 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.userRole === "warden") {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.changePasswordButton.addEventListener("click", changeOwnPassword);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentAction);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+function renderAuthNameOptions() {
+  const options = [];
+  if (state.wardenName) {
+    options.push(state.wardenName);
+  }
+  for (const name of [...state.authNames].sort((left, right) => left.localeCompare(right, "ko"))) {
+    if (!options.includes(name)) {
+      options.push(name);
+    }
+  }
+
+  elements.authNameInput.innerHTML = options
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
+
+  const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
+  const nextName = options.includes(savedName) ? savedName : options[0] || "";
+  elements.authNameInput.value = nextName;
+}
+
+async function loadAuthOptions() {
+  const payload = await fetchJson("/api/auth/options", {}, { allowUnauthorized: true });
+  state.authNames = Array.isArray(payload.names) ? payload.names : [];
+  state.wardenName = String(payload.wardenName || "사감");
+  renderAuthNameOptions();
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTabButton.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTab.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  elements.nameInput.innerHTML = getSortedPeople()
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+  if (selectedName) {
+    elements.nameInput.value = selectedName;
+  }
+}
+
+function getSortedPeople() {
+  return [...state.people].sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
+function renderMessageSenderOptions() {
+  if (state.userRole === "warden") {
+    const savedName = String(localStorage.getItem("messageSenderName") || "").trim();
+    elements.messageSenderInput.innerHTML = [
+      '<option value="">전체</option>',
+      ...getSortedPeople().map(
+        (person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`,
+      ),
+    ].join("");
+    elements.messageSenderInput.value = getSortedPeople().some((person) => person.name === savedName) ? savedName : "";
+    state.messageSenderName = String(elements.messageSenderInput.value || "");
+    return;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  elements.messageSenderInput.innerHTML = loginName
+    ? `<option value="${escapeHtml(loginName)}">${escapeHtml(loginName)}</option>`
+    : "";
+  elements.messageSenderInput.value = loginName;
+  state.messageSenderName = loginName;
+}
+
+function getSelectedMessageSender() {
+  return String(elements.messageSenderInput?.value || "").trim();
+}
+
+function ensureMessageSenderSelection() {
+  if (state.userRole === "warden") {
+    const selected = getSelectedMessageSender();
+    state.messageSenderName = selected;
+    return selected;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  state.messageSenderName = loginName;
+  elements.messageSenderInput.value = loginName;
+  return loginName;
+}
+
+function populateAdminControls() {
+  const currentRoom = String(elements.adminRoomInput.value || state.roomChoices[0] || "");
+  const currentSlot = String(elements.adminSlotInput.value || state.slotChoices[0] || "");
+  elements.adminRoomInput.innerHTML = state.roomChoices
+    .map((room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}호</option>`)
+    .join("");
+  elements.adminSlotInput.innerHTML = state.slotChoices
+    .map((slot) => `<option value="${slot}">${slot}</option>`)
+    .join("");
+  if (currentRoom) {
+    elements.adminRoomInput.value = currentRoom;
+  }
+  if (currentSlot) {
+    elements.adminSlotInput.value = currentSlot;
+  }
+  if (!elements.adminGradeInput.value) {
+    elements.adminGradeInput.value = "1";
+  }
+  if (!String(elements.adminPasswordInput.value || "").trim()) {
+    elements.adminPasswordInput.value = "3141";
+  }
+}
+
+function renderAdminStudentRows() {
+  const people = [...state.people].sort((left, right) => {
+    if (left.room !== right.room) {
+      return left.room.localeCompare(right.room);
+    }
+    return Number(left.slot) - Number(right.slot);
+  });
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-row">학생 없음</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>${escapeHtml(person.name)}</td>
+          <td>${escapeHtml(person.room)}</td>
+          <td>${escapeHtml(person.slot)}</td>
+          <td>${escapeHtml(person.grade ?? "")}</td>
+          <td>
+            <div class="actions">
+              <input type="text" class="text-input" data-admin-password-input="${escapeHtml(person.name)}" placeholder="새 비밀번호" />
+              <button type="button" data-admin-password-save="${escapeHtml(person.name)}">변경</button>
+            </div>
+          </td>
+          <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function clearOwnPasswordInputs() {
+  elements.currentPasswordInput.value = "";
+  elements.newPasswordInput.value = "";
+  elements.confirmPasswordInput.value = "";
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  }
+
+  renderMessagesScope();
+}
+
+function renderMessagesScope() {
+  if (state.userRole === "warden") {
+    elements.messagesScopeLabel.textContent = state.messageSenderName
+      ? `사감 모드: ${state.messageSenderName} 기록 ${state.messages.length}건`
+      : `사감 모드: 전체 ${state.messages.length}건`;
+    return;
+  }
+
+  elements.messagesScopeLabel.textContent = `보낸 사람: ${state.loginName || "없음"} / 내 기록 ${state.messages.length}건`;
+}
+
+function renderMessageRows() {
+  if (!Array.isArray(state.messages) || state.messages.length === 0) {
+    elements.messageRows.innerHTML = `
+      <tr>
+        <td colspan="3" class="empty-row">기록 없음</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.messageRows.innerHTML = state.messages
+    .map(
+      (message) => `
+        <tr>
+          <td>${escapeHtml(formatMessageDateTime(message.createdAt))}</td>
+          <td>${escapeHtml(message.senderName || "")}</td>
+          <td>${escapeHtml(message.text || "")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function formatMessageDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+async function loadMessages() {
+  if (!state.authenticated) {
+    return;
+  }
+
+  try {
+    let url = "/api/messages";
+    if (state.userRole === "warden") {
+      const senderName = ensureMessageSenderSelection();
+      if (senderName) {
+        url = `/api/messages?senderName=${encodeURIComponent(senderName)}`;
+      }
+    } else {
+      ensureMessageSenderSelection();
+    }
+
+    const payload = await fetchJson(url);
+    state.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    if (payload.senderName) {
+      state.messageSenderName = payload.senderName;
+    }
+    renderMessagesScope();
+    renderMessageRows();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function sendWardenMessage() {
+  if (!state.authenticated) {
+    handleUnauthorized("이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  if (state.userRole !== "student") {
+    setMessage("학생 모드에서만 보낼 수 있습니다.", true);
+    return;
+  }
+
+  const senderName = ensureMessageSenderSelection();
+  const text = String(elements.wardenMessageInput.value || "").trim();
+  if (!senderName) {
+    setMessage("로그인한 이름이 없습니다.", true);
+    return;
+  }
+  if (!text) {
+    setMessage("메시지를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    });
+    elements.wardenMessageInput.value = "";
+    await loadMessages();
+    setMessage("사감문자를 보냈습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function changeOwnPassword() {
+  if (!state.authenticated) {
+    handleUnauthorized("이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  const currentPassword = String(elements.currentPasswordInput.value || "");
+  const newPassword = String(elements.newPasswordInput.value || "");
+  const confirmPassword = String(elements.confirmPasswordInput.value || "");
+
+  if (!currentPassword) {
+    setMessage("현재 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  if (!newPassword) {
+    setMessage("새 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    setMessage("새 비밀번호 확인이 일치하지 않습니다.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/auth/change-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+      }),
+    });
+    clearOwnPasswordInputs();
+    setMessage("비밀번호를 변경했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(elements.adminNameInput.value || "").trim();
+  const room = String(elements.adminRoomInput.value || "").trim();
+  const slot = Number(elements.adminSlotInput.value || 0);
+  const grade = Number(elements.adminGradeInput.value || 0);
+  const password = String(elements.adminPasswordInput.value || "");
+
+  if (!name) {
+    setMessage("학생 이름을 입력하세요.", true);
+    return;
+  }
+
+  if (!password) {
+    setMessage("초기 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, room, slot, grade, password }),
+    });
+    elements.adminNameInput.value = "";
+    elements.adminPasswordInput.value = "3141";
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 추가했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentAction(event) {
+  const passwordButton = event.target.closest("[data-admin-password-save]");
+  if (passwordButton) {
+    const name = String(passwordButton.dataset.adminPasswordSave || "").trim();
+    const input = elements.adminStudentRows.querySelector(`[data-admin-password-input="${CSS.escape(name)}"]`);
+    const password = String(input?.value || "");
+    if (!password) {
+      setMessage("새 비밀번호를 입력하세요.", true);
+      return;
+    }
+    changeStudentPasswordByName(name, password, input);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function changeStudentPasswordByName(name, password, input) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}/password`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    if (input) {
+      input.value = "";
+    }
+    setMessage("학생 비밀번호를 변경했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function deleteStudentByName(name) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 삭제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function showAuthGate() {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  elements.authGate.classList.remove("hidden");
+  elements.appShell.classList.add("hidden");
+  renderAuthNameOptions();
+  elements.passwordInput.focus();
+}
+
+function handleUnauthorized(message) {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  setAuthMessage(message || "이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+  showAuthGate();
+}
+
+async function restoreSession() {
+  try {
+    const payload = await fetchJson("/api/auth/status", {}, { allowUnauthorized: true });
+    if (!payload.authenticated) {
+      showAuthGate();
+      return;
+    }
+
+    await finishLogin(payload.role || "student", payload.loginName || "");
+  } catch (error) {
+    showAuthGate();
+    setAuthMessage(error.message);
+  }
+}
+
+async function finishLogin(role = "student", loginName = "") {
+  ensureExtendedState();
+  state.authenticated = true;
+  state.userRole = role || "student";
+  state.loginName = loginName || "";
+  if (state.loginName) {
+    localStorage.setItem("authSelectedName", state.loginName);
+    elements.authNameInput.value = state.loginName;
+  }
+  showAppShell();
+  applyRoleMode();
+  await loadProtectedData();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = payload.people || [];
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    state.people.find((person) => person.name === savedName)?.name ||
+    state.people.find((person) => person.name === state.loginName)?.name ||
+    state.people[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+async function login() {
+  const name = String(elements.authNameInput.value || "").trim();
+  const password = String(elements.passwordInput.value || "");
+  if (!name) {
+    setAuthMessage("이름을 선택하세요.");
+    return;
+  }
+  if (!password) {
+    setAuthMessage("비밀번호를 입력하세요.");
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, password }),
+      },
+      { allowUnauthorized: true },
+    );
+
+    localStorage.setItem("authSelectedName", name);
+    elements.passwordInput.value = "";
+    clearAuthMessage();
+    await finishLogin(payload.role || "student", payload.loginName || name);
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" }, { allowUnauthorized: true });
+  } catch (_error) {
+    // Ignore logout failures and clear the local view anyway.
+  }
+
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage("로그아웃되었습니다.");
+}
+
+async function initialize() {
+  ensureExtendedState();
+  renderDayButtons();
+  renderScheduleRows();
+  renderOvernightRows();
+  renderChart();
+  renderMessageRows();
+  renderAdminStudentRows();
+  clearMessage();
+  clearAuthMessage();
+  await loadAuthOptions();
+  await restoreSession();
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 더 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.messageSenderName) {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentDelete);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  elements.nameInput.innerHTML = getSortedPeople()
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+  if (selectedName) {
+    elements.nameInput.value = selectedName;
+  }
+}
+
+function getSortedPeople() {
+  return [...state.people].sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
+function getSavedMessageSenderName() {
+  return String(localStorage.getItem("messageSenderName") || "").trim();
+}
+
+function getSelectedMessageSender() {
+  return String(elements.messageSenderInput?.value || "").trim();
+}
+
+function ensureMessageSenderSelection() {
+  const names = state.people.map((person) => person.name);
+  const fallbackName =
+    state.messageSenderName ||
+    getSavedMessageSenderName() ||
+    state.selectedName ||
+    state.people[0]?.name ||
+    "";
+  const nextName = names.includes(fallbackName)
+    ? fallbackName
+    : names.includes(state.selectedName)
+      ? state.selectedName
+      : state.people[0]?.name || "";
+
+  state.messageSenderName = nextName;
+  if (elements.messageSenderInput) {
+    elements.messageSenderInput.value = nextName;
+  }
+  if (nextName) {
+    localStorage.setItem("messageSenderName", nextName);
+  } else {
+    localStorage.removeItem("messageSenderName");
+  }
+  return nextName;
+}
+
+function renderMessageSenderOptions() {
+  const currentSender = state.messageSenderName || getSavedMessageSenderName();
+  elements.messageSenderInput.innerHTML = getSortedPeople()
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+  if (currentSender) {
+    elements.messageSenderInput.value = currentSender;
+  }
+}
+
+function populateAdminControls() {
+  const currentRoom = String(elements.adminRoomInput.value || state.roomChoices[0] || "");
+  const currentSlot = String(elements.adminSlotInput.value || state.slotChoices[0] || "");
+  elements.adminRoomInput.innerHTML = state.roomChoices
+    .map((room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}호</option>`)
+    .join("");
+  elements.adminSlotInput.innerHTML = state.slotChoices
+    .map((slot) => `<option value="${slot}">${slot}</option>`)
+    .join("");
+  if (currentRoom) {
+    elements.adminRoomInput.value = currentRoom;
+  }
+  if (currentSlot) {
+    elements.adminSlotInput.value = currentSlot;
+  }
+  if (!elements.adminGradeInput.value) {
+    elements.adminGradeInput.value = "1";
+  }
+}
+
+function renderAdminStudentRows() {
+  const people = [...state.people].sort((left, right) => {
+    if (left.room !== right.room) {
+      return left.room.localeCompare(right.room);
+    }
+    return Number(left.slot) - Number(right.slot);
+  });
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-row">학생 없음</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>${escapeHtml(person.name)}</td>
+          <td>${escapeHtml(person.room)}</td>
+          <td>${escapeHtml(person.slot)}</td>
+          <td>${escapeHtml(person.grade ?? "")}</td>
+          <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : "학생 모드";
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  }
+
+  renderMessagesScope();
+}
+
+function renderMessagesScope() {
+  if (state.userRole === "warden") {
+    elements.messagesScopeLabel.textContent = `사감 모드: 전체 ${state.messages.length}건`;
+    return;
+  }
+
+  const senderName = state.messageSenderName || "없음";
+  elements.messagesScopeLabel.textContent = `보낸 사람: ${senderName} / 내 기록 ${state.messages.length}건`;
+}
+
+function renderMessageRows() {
+  if (!Array.isArray(state.messages) || state.messages.length === 0) {
+    elements.messageRows.innerHTML = `
+      <tr>
+        <td colspan="3" class="empty-row">기록 없음</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.messageRows.innerHTML = state.messages
+    .map(
+      (message) => `
+        <tr>
+          <td>${escapeHtml(formatMessageDateTime(message.createdAt))}</td>
+          <td>${escapeHtml(message.senderName || "")}</td>
+          <td>${escapeHtml(message.text || "")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function formatMessageDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+async function loadMessages() {
+  if (!state.authenticated) {
+    return;
+  }
+
+  try {
+    let url = "/api/messages";
+    if (state.userRole !== "warden") {
+      const senderName = ensureMessageSenderSelection();
+      if (!senderName) {
+        state.messages = [];
+        renderMessagesScope();
+        renderMessageRows();
+        return;
+      }
+      url = `/api/messages?senderName=${encodeURIComponent(senderName)}`;
+    }
+
+    const payload = await fetchJson(url);
+    state.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    if (state.userRole !== "warden" && payload.senderName) {
+      state.messageSenderName = payload.senderName;
+      elements.messageSenderInput.value = payload.senderName;
+      localStorage.setItem("messageSenderName", payload.senderName);
+    }
+    renderMessagesScope();
+    renderMessageRows();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function sendWardenMessage() {
+  if (!state.authenticated) {
+    handleUnauthorized("비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  const senderName = ensureMessageSenderSelection();
+  const text = String(elements.wardenMessageInput.value || "").trim();
+  if (!senderName) {
+    setMessage("보낼 사용자를 선택하세요.", true);
+    return;
+  }
+  if (!text) {
+    setMessage("메시지를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        senderName,
+        text,
+      }),
+    });
+    elements.wardenMessageInput.value = "";
+    await loadMessages();
+    setMessage("사감문자를 보냈습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(elements.adminNameInput.value || "").trim();
+  const room = String(elements.adminRoomInput.value || "").trim();
+  const slot = Number(elements.adminSlotInput.value || 0);
+  const grade = Number(elements.adminGradeInput.value || 0);
+
+  if (!name) {
+    setMessage("학생 이름을 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, room, slot, grade }),
+    });
+    elements.adminNameInput.value = "";
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 추가했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentDelete(event) {
+  const button = event.target.closest("[data-admin-delete]");
+  if (!button) {
+    return;
+  }
+
+  const name = String(button.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function deleteStudentByName(name) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 삭제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function showAuthGate() {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.messages = [];
+  elements.authGate.classList.remove("hidden");
+  elements.appShell.classList.add("hidden");
+  renderMessagesScope();
+  renderMessageRows();
+  elements.passwordInput.focus();
+}
+
+function handleUnauthorized(message) {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.messages = [];
+  cancelAutoSave();
+  setAuthMessage(message || "비밀번호를 입력해야 접근할 수 있습니다.");
+  showAuthGate();
+}
+
+async function restoreSession() {
+  try {
+    const payload = await fetchJson("/api/auth/status", {}, { allowUnauthorized: true });
+    if (!payload.authenticated) {
+      showAuthGate();
+      return;
+    }
+
+    await finishLogin(payload.role || "student");
+  } catch (error) {
+    showAuthGate();
+    setAuthMessage(error.message);
+  }
+}
+
+async function finishLogin(role = "student") {
+  ensureExtendedState();
+  state.authenticated = true;
+  state.userRole = role || "student";
+  showAppShell();
+  applyRoleMode();
+  await loadProtectedData();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.people = payload.people || [];
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    state.people.find((person) => person.name === savedName)?.name || state.people[0]?.name || "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  ensureMessageSenderSelection();
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+async function login() {
+  const password = String(elements.passwordInput.value || "").trim();
+  if (!password) {
+    setAuthMessage("비밀번호를 입력하세요.");
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password }),
+      },
+      { allowUnauthorized: true },
+    );
+
+    elements.passwordInput.value = "";
+    clearAuthMessage();
+    await finishLogin(payload.role || "student");
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" }, { allowUnauthorized: true });
+  } catch (_error) {
+    // Ignore logout failures and clear the local view anyway.
+  }
+
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.messages = [];
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage("로그아웃되었습니다.");
+}
+
+async function initialize() {
+  ensureExtendedState();
+  renderDayButtons();
+  renderScheduleRows();
+  renderOvernightRows();
+  renderChart();
+  renderMessageRows();
+  renderAdminStudentRows();
+  clearMessage();
+  clearAuthMessage();
+  await restoreSession();
+}
+
+function ensureExtendedState() {
+  if (!Object.prototype.hasOwnProperty.call(state, "userRole")) {
+    state.userRole = "student";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "loginName")) {
+    state.loginName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messages")) {
+    state.messages = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "messageSenderName")) {
+    state.messageSenderName = "";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "authNames")) {
+    state.authNames = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "wardenName")) {
+    state.wardenName = "사감";
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "roomChoices")) {
+    state.roomChoices = [];
+  }
+  if (!Object.prototype.hasOwnProperty.call(state, "slotChoices")) {
+    state.slotChoices = [];
+  }
+}
+
+function cacheElements() {
+  ensureExtendedState();
+
+  elements.authGate = document.querySelector("#authGate");
+  elements.appShell = document.querySelector("#appShell");
+  elements.authNameInput = document.querySelector("#authNameInput");
+  elements.passwordInput = document.querySelector("#passwordInput");
+  elements.loginButton = document.querySelector("#loginButton");
+  elements.logoutButton = document.querySelector("#logoutButton");
+  elements.authMessage = document.querySelector("#authMessage");
+  elements.nameInput = document.querySelector("#nameInput");
+  elements.loadUserButton = document.querySelector("#loadUserButton");
+  elements.saveUserButton = document.querySelector("#saveUserButton");
+  elements.roleBadge = document.querySelector("#roleBadge");
+  elements.settingsTabButton = document.querySelector("#settingsTabButton");
+  elements.overnightTabButton = document.querySelector("#overnightTabButton");
+  elements.dashboardTabButton = document.querySelector("#dashboardTabButton");
+  elements.passwordTabButton = document.querySelector("#passwordTabButton");
+  elements.messagesTabButton = document.querySelector("#messagesTabButton");
+  elements.adminTabButton = document.querySelector("#adminTabButton");
+  elements.settingsTab = document.querySelector("#settingsTab");
+  elements.overnightTab = document.querySelector("#overnightTab");
+  elements.dashboardTab = document.querySelector("#dashboardTab");
+  elements.passwordTab = document.querySelector("#passwordTab");
+  elements.messagesTab = document.querySelector("#messagesTab");
+  elements.adminTab = document.querySelector("#adminTab");
+  elements.dayTabs = document.querySelector("#dayTabs");
+  elements.addRowButton = document.querySelector("#addRowButton");
+  elements.clearRowsButton = document.querySelector("#clearRowsButton");
+  elements.clearOvernightButton = document.querySelector("#clearOvernightButton");
+  elements.scheduleRows = document.querySelector("#scheduleRows");
+  elements.overnightRows = document.querySelector("#overnightRows");
+  elements.chartContainer = document.querySelector("#chartContainer");
+  elements.overnightChartContainer = document.querySelector("#overnightChartContainer");
+  elements.dashboardFilters = document.querySelector("#dashboardFilters");
+  elements.summaryLine = document.querySelector("#summaryLine");
+  elements.dashboardBoard = document.querySelector("#dashboardBoard");
+  elements.currentPasswordInput = document.querySelector("#currentPasswordInput");
+  elements.newPasswordInput = document.querySelector("#newPasswordInput");
+  elements.confirmPasswordInput = document.querySelector("#confirmPasswordInput");
+  elements.changePasswordButton = document.querySelector("#changePasswordButton");
+  elements.messageComposer = document.querySelector("#messageComposer");
+  elements.messageSenderInput = document.querySelector("#messageSenderInput");
+  elements.wardenMessageInput = document.querySelector("#wardenMessageInput");
+  elements.sendWardenMessageButton = document.querySelector("#sendWardenMessageButton");
+  elements.messagesScopeLabel = document.querySelector("#messagesScopeLabel");
+  elements.messageRows = document.querySelector("#messageRows");
+  elements.adminNameInput = document.querySelector("#adminNameInput");
+  elements.adminRoomInput = document.querySelector("#adminRoomInput");
+  elements.adminSlotInput = document.querySelector("#adminSlotInput");
+  elements.adminGradeInput = document.querySelector("#adminGradeInput");
+  elements.adminPasswordInput = document.querySelector("#adminPasswordInput");
+  elements.adminAddButton = document.querySelector("#adminAddButton");
+  elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  elements.messageBox = document.querySelector("#messageBox");
+
+  elements.chartTooltip = document.createElement("div");
+  elements.chartTooltip.className = "chart-tooltip hidden";
+  document.body.appendChild(elements.chartTooltip);
+}
+
+function bindEvents() {
+  elements.loginButton.addEventListener("click", login);
+  elements.logoutButton.addEventListener("click", logout);
+  elements.authNameInput.addEventListener("change", () => {
+    localStorage.setItem("authSelectedName", String(elements.authNameInput.value || "").trim());
+  });
+  elements.passwordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      login();
+    }
+  });
+
+  elements.loadUserButton.addEventListener("click", () => loadUser(getSelectedNameInput()));
+  elements.saveUserButton.addEventListener("click", () => saveUser());
+  elements.nameInput.addEventListener("change", () => {
+    loadUser(getSelectedNameInput());
+  });
+  elements.nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      loadUser(getSelectedNameInput());
+    }
+  });
+
+  elements.settingsTabButton.addEventListener("click", () => switchTab("settings"));
+  elements.overnightTabButton.addEventListener("click", () => switchTab("overnight"));
+  elements.dashboardTabButton.addEventListener("click", () => switchTab("dashboard"));
+  elements.passwordTabButton.addEventListener("click", () => switchTab("password"));
+  elements.messagesTabButton.addEventListener("click", () => switchTab("messages"));
+  elements.adminTabButton.addEventListener("click", () => switchTab("admin"));
+
+  elements.dayTabs.addEventListener("click", handleDayButtonClick);
+  elements.dashboardFilters.addEventListener("click", handleDashboardFilterClick);
+
+  elements.addRowButton.addEventListener("click", () => {
+    const newRow = createEmptyRow();
+    if (!newRow) {
+      window.alert("같은 요일에 추가할 수 있는 빈 시간이 없습니다.");
+      return;
+    }
+
+    state.intervals.push(newRow);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearRowsButton.addEventListener("click", () => {
+    state.intervals = state.intervals.filter((interval) => interval.day !== state.selectedDay);
+    renderScheduleRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.clearOvernightButton.addEventListener("click", () => {
+    state.overnights = [];
+    renderOvernightRows();
+    renderChart();
+    queueAutoSave();
+  });
+
+  elements.scheduleRows.addEventListener("change", handleScheduleChange);
+  elements.scheduleRows.addEventListener("input", handleScheduleChange);
+  elements.scheduleRows.addEventListener("click", handleScheduleDelete);
+
+  elements.overnightRows.addEventListener("input", handleOvernightChange);
+  elements.overnightRows.addEventListener("click", handleOvernightCancel);
+
+  elements.messageSenderInput.addEventListener("change", () => {
+    state.messageSenderName = getSelectedMessageSender();
+    if (state.userRole === "warden") {
+      localStorage.setItem("messageSenderName", state.messageSenderName);
+    }
+    loadMessages();
+  });
+  elements.sendWardenMessageButton.addEventListener("click", sendWardenMessage);
+  elements.changePasswordButton.addEventListener("click", changeOwnPassword);
+  elements.adminAddButton.addEventListener("click", addStudent);
+  elements.adminStudentRows.addEventListener("click", handleAdminStudentAction);
+
+  elements.chartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.chartContainer.addEventListener("mouseleave", hideChartTooltip);
+  elements.overnightChartContainer.addEventListener("mousemove", handleChartTooltipMove);
+  elements.overnightChartContainer.addEventListener("mouseleave", hideChartTooltip);
+
+  window.addEventListener("resize", debounce(renderChart, 120));
+  window.addEventListener("pagehide", flushPendingSaveOnPageHide);
+}
+
+function renderAuthNameOptions() {
+  const options = [];
+  if (state.wardenName) {
+    options.push(state.wardenName);
+  }
+
+  for (const name of [...state.authNames].sort((left, right) => left.localeCompare(right, "ko"))) {
+    if (!options.includes(name)) {
+      options.push(name);
+    }
+  }
+
+  elements.authNameInput.innerHTML = options
+    .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join("");
+
+  const savedName = String(localStorage.getItem("authSelectedName") || "").trim();
+  const nextName = options.includes(savedName) ? savedName : options[0] || "";
+  elements.authNameInput.value = nextName;
+}
+
+async function loadAuthOptions() {
+  const payload = await fetchJson("/api/auth/options", {}, { allowUnauthorized: true });
+  state.authNames = Array.isArray(payload.names) ? payload.names : [];
+  state.wardenName = String(payload.wardenName || "사감");
+  renderAuthNameOptions();
+}
+
+function switchTab(tabName) {
+  ensureExtendedState();
+  const nextTab = tabName === "admin" && state.userRole !== "warden" ? "settings" : tabName;
+  state.activeTab = nextTab;
+
+  elements.settingsTabButton.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTabButton.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTabButton.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTabButton.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTabButton.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTabButton.classList.toggle("is-active", nextTab === "admin");
+
+  elements.settingsTab.classList.toggle("is-active", nextTab === "settings");
+  elements.overnightTab.classList.toggle("is-active", nextTab === "overnight");
+  elements.dashboardTab.classList.toggle("is-active", nextTab === "dashboard");
+  elements.passwordTab.classList.toggle("is-active", nextTab === "password");
+  elements.messagesTab.classList.toggle("is-active", nextTab === "messages");
+  elements.adminTab.classList.toggle("is-active", nextTab === "admin");
+
+  if (nextTab !== "dashboard") {
+    renderChart();
+  }
+}
+
+function renderNameOptions() {
+  const selectedName = getSelectedNameInput();
+  elements.nameInput.innerHTML = getSortedPeople()
+    .map((person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`)
+    .join("");
+  if (selectedName) {
+    elements.nameInput.value = selectedName;
+  }
+}
+
+function getSortedPeople() {
+  return [...state.people].sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
+function renderMessageSenderOptions() {
+  if (state.userRole === "warden") {
+    const savedName = String(localStorage.getItem("messageSenderName") || "").trim();
+    elements.messageSenderInput.innerHTML = [
+      '<option value="">전체</option>',
+      ...getSortedPeople().map(
+        (person) => `<option value="${escapeHtml(person.name)}">${escapeHtml(person.name)}</option>`,
+      ),
+    ].join("");
+    elements.messageSenderInput.value = getSortedPeople().some((person) => person.name === savedName) ? savedName : "";
+    state.messageSenderName = String(elements.messageSenderInput.value || "");
+    return;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  elements.messageSenderInput.innerHTML = loginName
+    ? `<option value="${escapeHtml(loginName)}">${escapeHtml(loginName)}</option>`
+    : "";
+  elements.messageSenderInput.value = loginName;
+  state.messageSenderName = loginName;
+}
+
+function getSelectedMessageSender() {
+  return String(elements.messageSenderInput?.value || "").trim();
+}
+
+function ensureMessageSenderSelection() {
+  if (state.userRole === "warden") {
+    const selected = getSelectedMessageSender();
+    state.messageSenderName = selected;
+    return selected;
+  }
+
+  const loginName = state.loginName && state.people.some((person) => person.name === state.loginName) ? state.loginName : "";
+  state.messageSenderName = loginName;
+  elements.messageSenderInput.value = loginName;
+  return loginName;
+}
+
+function populateAdminControls() {
+  const currentRoom = String(elements.adminRoomInput.value || state.roomChoices[0] || "");
+  const currentSlot = String(elements.adminSlotInput.value || state.slotChoices[0] || "");
+  elements.adminRoomInput.innerHTML = state.roomChoices
+    .map((room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}호</option>`)
+    .join("");
+  elements.adminSlotInput.innerHTML = state.slotChoices
+    .map((slot) => `<option value="${slot}">${slot}</option>`)
+    .join("");
+  if (currentRoom) {
+    elements.adminRoomInput.value = currentRoom;
+  }
+  if (currentSlot) {
+    elements.adminSlotInput.value = currentSlot;
+  }
+  if (!elements.adminGradeInput.value) {
+    elements.adminGradeInput.value = "1";
+  }
+  if (!String(elements.adminPasswordInput.value || "").trim()) {
+    elements.adminPasswordInput.value = "3141";
+  }
+}
+
+function renderAdminStudentRows() {
+  const people = [...state.people].sort((left, right) => {
+    if (left.room !== right.room) {
+      return left.room.localeCompare(right.room);
+    }
+    if (Number(left.slot) !== Number(right.slot)) {
+      return Number(left.slot) - Number(right.slot);
+    }
+    return left.name.localeCompare(right.name, "ko");
+  });
+
+  if (people.length === 0) {
+    elements.adminStudentRows.innerHTML = `
+      <tr>
+        <td colspan="6" class="empty-row">학생이 없습니다</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.adminStudentRows.innerHTML = people
+    .map(
+      (person) => `
+        <tr data-admin-name="${escapeHtml(person.name)}">
+          <td>${escapeHtml(person.name)}</td>
+          <td>${escapeHtml(person.room)}</td>
+          <td>${escapeHtml(person.slot)}</td>
+          <td>${escapeHtml(person.grade ?? "")}</td>
+          <td>
+            <div class="actions">
+              <input type="text" class="text-input" data-admin-password-input="${escapeHtml(person.name)}" placeholder="새 비밀번호" />
+              <button type="button" data-admin-password-save="${escapeHtml(person.name)}">변경</button>
+            </div>
+          </td>
+          <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function clearOwnPasswordInputs() {
+  elements.currentPasswordInput.value = "";
+  elements.newPasswordInput.value = "";
+  elements.confirmPasswordInput.value = "";
+}
+
+function applyRoleMode() {
+  const isWarden = state.userRole === "warden";
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.adminTabButton.classList.toggle("hidden", !isWarden);
+  elements.adminTab.classList.toggle("hidden", !isWarden);
+  elements.messageComposer.classList.toggle("hidden", isWarden);
+  elements.messageSenderInput.disabled = !isWarden;
+
+  if (!isWarden && state.activeTab === "admin") {
+    switchTab("settings");
+  }
+
+  renderMessagesScope();
+}
+
+function renderMessagesScope() {
+  if (state.userRole === "warden") {
+    elements.messagesScopeLabel.textContent = state.messageSenderName
+      ? `사감 모드: ${state.messageSenderName} 기록 ${state.messages.length}건`
+      : `사감 모드: 전체 ${state.messages.length}건`;
+    return;
+  }
+
+  elements.messagesScopeLabel.textContent = `보낸 사람: ${state.loginName || "없음"} / 총 기록 ${state.messages.length}건`;
+}
+
+function renderMessageRows() {
+  if (!Array.isArray(state.messages) || state.messages.length === 0) {
+    elements.messageRows.innerHTML = `
+      <tr>
+        <td colspan="3" class="empty-row">기록 없음</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.messageRows.innerHTML = state.messages
+    .map(
+      (message) => `
+        <tr>
+          <td>${escapeHtml(formatMessageDateTime(message.createdAt))}</td>
+          <td>${escapeHtml(message.senderName || "")}</td>
+          <td>${escapeHtml(message.text || "")}</td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function formatMessageDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+async function loadMessages() {
+  if (!state.authenticated) {
+    return;
+  }
+
+  try {
+    let url = "/api/messages";
+    if (state.userRole === "warden") {
+      const senderName = ensureMessageSenderSelection();
+      if (senderName) {
+        url = `/api/messages?senderName=${encodeURIComponent(senderName)}`;
+      }
+    } else {
+      ensureMessageSenderSelection();
+    }
+
+    const payload = await fetchJson(url);
+    state.messages = Array.isArray(payload.messages) ? payload.messages : [];
+    if (typeof payload.senderName === "string") {
+      state.messageSenderName = payload.senderName;
+    }
+    renderMessagesScope();
+    renderMessageRows();
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function sendWardenMessage() {
+  if (!state.authenticated) {
+    handleUnauthorized("이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  if (state.userRole !== "student") {
+    setMessage("학생 모드에서만 보낼 수 있습니다.", true);
+    return;
+  }
+
+  const senderName = ensureMessageSenderSelection();
+  const text = String(elements.wardenMessageInput.value || "").trim();
+  if (!senderName) {
+    setMessage("로그인한 이름이 없습니다.", true);
+    return;
+  }
+  if (!text) {
+    setMessage("메시지를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    });
+    elements.wardenMessageInput.value = "";
+    await loadMessages();
+    setMessage("사감문자를 보냈습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function changeOwnPassword() {
+  if (!state.authenticated) {
+    handleUnauthorized("이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+    return;
+  }
+
+  const currentPassword = String(elements.currentPasswordInput.value || "");
+  const newPassword = String(elements.newPasswordInput.value || "");
+  const confirmPassword = String(elements.confirmPasswordInput.value || "");
+
+  if (!currentPassword) {
+    setMessage("현재 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  if (!newPassword) {
+    setMessage("새 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    setMessage("새 비밀번호 확인이 일치하지 않습니다.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/auth/change-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+      }),
+    });
+    clearOwnPasswordInputs();
+    setMessage("비밀번호를 변경했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function addStudent() {
+  if (state.userRole !== "warden") {
+    setMessage("사감 모드에서만 가능합니다.", true);
+    return;
+  }
+
+  const name = String(elements.adminNameInput.value || "").trim();
+  const room = String(elements.adminRoomInput.value || "").trim();
+  const slot = Number(elements.adminSlotInput.value || 0);
+  const grade = Number(elements.adminGradeInput.value || 0);
+  const password = String(elements.adminPasswordInput.value || "");
+
+  if (!name) {
+    setMessage("학생 이름을 입력하세요.", true);
+    return;
+  }
+
+  if (!password) {
+    setMessage("초기 비밀번호를 입력하세요.", true);
+    return;
+  }
+
+  try {
+    await fetchJson("/api/admin/students", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, room, slot, grade, password }),
+    });
+    elements.adminNameInput.value = "";
+    elements.adminPasswordInput.value = "3141";
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 추가했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function handleAdminStudentAction(event) {
+  const passwordButton = event.target.closest("[data-admin-password-save]");
+  if (passwordButton) {
+    const name = String(passwordButton.dataset.adminPasswordSave || "").trim();
+    const input = elements.adminStudentRows.querySelector(`[data-admin-password-input="${CSS.escape(name)}"]`);
+    const password = String(input?.value || "");
+    if (!password) {
+      setMessage("새 비밀번호를 입력하세요.", true);
+      return;
+    }
+    changeStudentPasswordByName(name, password, input);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-admin-delete]");
+  if (!deleteButton) {
+    return;
+  }
+
+  const name = String(deleteButton.dataset.adminDelete || "").trim();
+  if (!name) {
+    return;
+  }
+
+  if (!window.confirm(`${name} 학생을 삭제할까요?`)) {
+    return;
+  }
+
+  deleteStudentByName(name);
+}
+
+async function changeStudentPasswordByName(name, password, input) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}/password`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ password }),
+    });
+    if (input) {
+      input.value = "";
+    }
+    setMessage("학생 비밀번호를 변경했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+async function deleteStudentByName(name) {
+  try {
+    await fetchJson(`/api/admin/students/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    await loadProtectedData();
+    switchTab("admin");
+    setMessage("학생을 삭제했습니다.");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+function showAuthGate() {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  elements.authGate.classList.remove("hidden");
+  elements.appShell.classList.add("hidden");
+  renderAuthNameOptions();
+  clearOwnPasswordInputs();
+  elements.passwordInput.focus();
+}
+
+function handleUnauthorized(message) {
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage(message || "이름과 비밀번호를 입력해야 접근할 수 있습니다.");
+}
+
+async function restoreSession() {
+  try {
+    const payload = await fetchJson("/api/auth/status", {}, { allowUnauthorized: true });
+    if (!payload.authenticated) {
+      showAuthGate();
+      return;
+    }
+
+    await finishLogin(payload.role || "student", payload.loginName || "");
+  } catch (error) {
+    showAuthGate();
+    setAuthMessage(error.message);
+  }
+}
+
+async function finishLogin(role = "student", loginName = "") {
+  ensureExtendedState();
+  state.authenticated = true;
+  state.userRole = role || "student";
+  state.loginName = loginName || "";
+  if (state.loginName) {
+    localStorage.setItem("authSelectedName", state.loginName);
+    elements.authNameInput.value = state.loginName;
+  }
+  showAppShell();
+  applyRoleMode();
+  await loadProtectedData();
+}
+
+async function loadProtectedData() {
+  ensureExtendedState();
+  const payload = await fetchJson("/api/config");
+
+  state.userRole = payload.role || state.userRole || "student";
+  state.loginName = payload.loginName || state.loginName || "";
+  state.people = payload.people || [];
+  state.authNames = state.people.map((person) => person.name);
+  state.roomChoices = payload.rooms || [];
+  state.slotChoices = payload.slots || [];
+
+  renderAuthNameOptions();
+  renderNameOptions();
+  renderMessageSenderOptions();
+  populateAdminControls();
+  renderAdminStudentRows();
+  applyRoleMode();
+  clearOwnPasswordInputs();
+
+  const savedName = localStorage.getItem("selectedName");
+  const initialName =
+    state.people.find((person) => person.name === savedName)?.name ||
+    state.people.find((person) => person.name === state.loginName)?.name ||
+    state.people[0]?.name ||
+    "";
+
+  if (initialName) {
+    elements.nameInput.value = initialName;
+    await loadUser(initialName);
+  } else {
+    elements.nameInput.value = "";
+    state.selectedName = "";
+    state.selectedRoom = "";
+    state.selectedSlot = 0;
+    state.intervals = [];
+    state.overnights = [];
+    renderScheduleRows();
+    renderOvernightRows();
+    renderChart();
+  }
+
+  await loadMessages();
+  await refreshDashboard();
+
+  if (!state.refreshTimerId) {
+    state.refreshTimerId = window.setInterval(() => {
+      if (!state.authenticated) {
+        return;
+      }
+
+      refreshDashboard();
+      renderChart();
+      loadMessages();
+    }, 30000);
+  }
+}
+
+async function login() {
+  const name = String(elements.authNameInput.value || "").trim();
+  const password = String(elements.passwordInput.value || "");
+  if (!name) {
+    setAuthMessage("이름을 선택하세요.");
+    return;
+  }
+  if (!password) {
+    setAuthMessage("비밀번호를 입력하세요.");
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, password }),
+      },
+      { allowUnauthorized: true },
+    );
+
+    localStorage.setItem("authSelectedName", name);
+    elements.passwordInput.value = "";
+    clearAuthMessage();
+    await finishLogin(payload.role || "student", payload.loginName || name);
+  } catch (error) {
+    setAuthMessage(error.message);
+  }
+}
+
+async function logout() {
+  try {
+    await fetchJson("/api/auth/logout", { method: "POST" }, { allowUnauthorized: true });
+  } catch (_error) {
+    // Ignore logout failures and clear the local view anyway.
+  }
+
+  ensureExtendedState();
+  state.authenticated = false;
+  state.userRole = "student";
+  state.loginName = "";
+  state.messages = [];
+  cancelAutoSave();
+  showAuthGate();
+  setAuthMessage("로그아웃했습니다.");
+}
+
+async function initialize() {
+  ensureExtendedState();
+  renderDayButtons();
+  renderScheduleRows();
+  renderOvernightRows();
+  renderChart();
+  renderMessageRows();
+  renderAdminStudentRows();
+  clearMessage();
+  clearAuthMessage();
+  await loadAuthOptions();
+  await restoreSession();
 }

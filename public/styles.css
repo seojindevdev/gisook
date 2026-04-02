@@ -168,7 +168,7 @@ table {
 th,
 td {
   border: 1px solid #cccccc;
-  padding: 8px;
+  padding: 1px;
   white-space: nowrap;
   vertical-align: middle;
   text-align: left;
@@ -552,8 +552,8 @@ option.blocked-option {
 
 #adminTab .admin-profile-name-input,
 #adminTab .admin-profile-select {
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 10px;
+  padding: 2px 3px;
   border: 1px solid #9ca3af;
   background: #ffffff;
 }
@@ -566,8 +566,8 @@ option.blocked-option {
 
 #adminTab .admin-save-button,
 #adminTab .admin-delete-button {
-  min-height: 44px;
-  padding: 10px 14px;
+  min-height: 10px;
+  padding: 2px 3px;
   border: 1px solid #9ca3af;
   background: #ffffff;
 }
@@ -576,6 +576,67 @@ option.blocked-option {
   background: #111111;
   border-color: #111111;
   color: #ffffff;
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  #adminTab .actions {
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  #adminTab .admin-filter-select {
+    flex: 0 1 108px;
+    min-width: 96px;
+  }
+
+  #adminSearchInput {
+    flex: 1 1 160px;
+    min-width: 140px;
+    max-width: none;
+  }
+
+  #adminTab table {
+    min-width: 620px;
+    table-layout: auto;
+  }
+
+  #adminTab th,
+  #adminTab td {
+    padding: 6px;
+  }
+
+  #adminTab th:nth-child(1),
+  #adminTab td:nth-child(1) {
+    width: 34%;
+  }
+
+  #adminTab th:nth-child(2),
+  #adminTab td:nth-child(2) {
+    width: 23%;
+  }
+
+  #adminTab th:nth-child(3),
+  #adminTab td:nth-child(3) {
+    width: 23%;
+  }
+
+  #adminTab th:nth-child(4),
+  #adminTab td:nth-child(4) {
+    width: 20%;
+  }
+
+  #adminTab .admin-profile-name-input,
+  #adminTab .admin-profile-select,
+  #adminTab .admin-save-button,
+  #adminTab .admin-delete-button {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+
+  #adminTab .admin-cell-actions {
+    gap: 6px;
+  }
 }
 
 .room-slots-grid {

@@ -1,4 +1,4 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const crypto = require("crypto");
@@ -21,6 +21,8 @@ const ROOM_NUMBERS = Array.from({ length: 20 }, (_, index) => String(201 + index
 const SLOT_NUMBERS = [1, 2, 3, 4];
 const SESSION_COOKIE_NAME = "gisook_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const DEFAULT_STUDENT_PASSWORD = "0000";
+const LEGACY_STUDENT_PASSWORD = "3141";
 const authSessions = new Map();
 
 const WEEKDAYS = [
@@ -58,18 +60,7 @@ const MIME_TYPES = {
   ".svg": "image/svg+xml",
 };
 
-const PERSON_NAME_ALIASES = {
-  "강선우1(1학년)": "강선우 1",
-  "강선우2(2학년)": "강선우 2",
-  강선우1: "강선우 1",
-  강선우2: "강선우 2",
-  심지호: "심지후",
-  장예현: "장예헌",
-  서정오: "서정호",
-  김인호: "김인후",
-  현솔온: "현준호",
-  현솔윤: "현준호",
-};
+const PERSON_NAME_ALIASES = {};
 
 bootstrapFiles();
 
@@ -410,7 +401,7 @@ function readPreparedAuthConfig(roster) {
 }
 
 function normalizeAuthConfig(raw, roster) {
-  const legacyPassword = String(raw?.studentPassword || raw?.password || "3141");
+  const legacyPassword = String(raw?.studentPassword || raw?.password || DEFAULT_STUDENT_PASSWORD);
   const rawPasswords =
     raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
       ? raw.studentPasswords
@@ -423,7 +414,11 @@ function normalizeAuthConfig(raw, roster) {
   const studentPasswords = Object.fromEntries(
     roster.map((person) => {
       const storedPassword = normalizedRawPasswords[person.name];
-      return [person.name, String(storedPassword ?? legacyPassword ?? "3141")];
+      const resolvedPassword = String(storedPassword ?? legacyPassword ?? DEFAULT_STUDENT_PASSWORD);
+      return [
+        person.name,
+        resolvedPassword === LEGACY_STUDENT_PASSWORD ? DEFAULT_STUDENT_PASSWORD : resolvedPassword,
+      ];
     }),
   );
 
@@ -978,7 +973,7 @@ function createStudent(payload) {
     throwHttpError(400, "학년은 1, 2, 3만 가능합니다.");
   }
 
-  const password = "3141";
+  const password = DEFAULT_STUDENT_PASSWORD;
 
   if (roster.some((person) => person.name === name)) {
     throwHttpError(400, "이미 있는 이름입니다.");
@@ -1023,15 +1018,15 @@ function updateStudentProfile(userName, payload) {
   const authConfig = readPreparedAuthConfig(roster);
 
   if (!nextName) {
-    throwHttpError(400, "?대쫫???낅젰?댁＜?몄슂.");
+    throwHttpError(400, "이름을 입력해주세요.");
   }
 
   if (nextName.length > 30) {
-    throwHttpError(400, "?대쫫? 30???댄븯濡??낅젰?댁＜?몄슂.");
+    throwHttpError(400, "이름은 30자 이하로 입력해주세요.");
   }
 
   if (nextName !== person.name && roster.some((candidate) => candidate.name === nextName)) {
-    throwHttpError(400, "?대? ?덈뒗 ?대쫫?낅땲??");
+    throwHttpError(400, "이미 있는 이름입니다.");
   }
 
   if (!ROOM_NUMBERS.includes(room)) {
@@ -1082,7 +1077,7 @@ function updateStudentProfile(userName, payload) {
   writeDatabase(database);
 
   if (nextName !== person.name) {
-    authConfig.studentPasswords[nextName] = authConfig.studentPasswords[person.name] || "3141";
+    authConfig.studentPasswords[nextName] = authConfig.studentPasswords[person.name] || DEFAULT_STUDENT_PASSWORD;
     delete authConfig.studentPasswords[person.name];
     renameStudentMessages(person.name, nextName);
     renameStudentAttendance(person.name, nextName);
@@ -1303,60 +1298,7 @@ function createEmptyDatabase(roster) {
 
 function getDefaultRosterDocument() {
   return {
-    people: [
-      { name: "함병구", room: "201", slot: 1 },
-      { name: "김원무", room: "201", slot: 2 },
-      { name: "현두영", room: "201", slot: 3 },
-      { name: "김태룡", room: "201", slot: 4 },
-      { name: "송정민", room: "202", slot: 1 },
-      { name: "한성훈", room: "202", slot: 2 },
-      { name: "강선우", room: "202", slot: 3 },
-      { name: "차원형", room: "202", slot: 4 },
-      { name: "조원형", room: "203", slot: 1 },
-      { name: "채민규", room: "203", slot: 2 },
-      { name: "황성진", room: "204", slot: 1 },
-      { name: "심연우", room: "204", slot: 2 },
-      { name: "여현교", room: "204", slot: 3 },
-      { name: "노건호", room: "204", slot: 4 },
-      { name: "지연우", room: "205", slot: 1 },
-      { name: "김일구", room: "205", slot: 2 },
-      { name: "최겸일", room: "205", slot: 3 },
-      { name: "오성윤", room: "205", slot: 4 },
-      { name: "홍현권", room: "206", slot: 1 },
-      { name: "구본형", room: "206", slot: 2 },
-      { name: "서현영", room: "206", slot: 3 },
-      { name: "송호경", room: "206", slot: 4 },
-      { name: "민주원", room: "207", slot: 1 },
-      { name: "정세홍", room: "207", slot: 2 },
-      { name: "현성우", room: "207", slot: 3 },
-      { name: "노우석", room: "207", slot: 4 },
-      { name: "김세진", room: "208", slot: 1 },
-      { name: "성성환", room: "208", slot: 3 },
-      { name: "이동민", room: "208", slot: 4 },
-      { name: "정태영", room: "209", slot: 1 },
-      { name: "장선우", room: "209", slot: 2 },
-      { name: "황기구", room: "209", slot: 3 },
-      { name: "정하윤", room: "209", slot: 4 },
-      { name: "한민성", room: "210", slot: 3 },
-      { name: "홍현세", room: "210", slot: 4 },
-      { name: "강지용", room: "211", slot: 1 },
-      { name: "이호진", room: "211", slot: 3 },
-      { name: "현준호", room: "211", slot: 4 },
-      { name: "장예헌", room: "212", slot: 1 },
-      { name: "서정호", room: "212", slot: 2 },
-      { name: "여상민", room: "212", slot: 3 },
-      { name: "정병수", room: "213", slot: 1 },
-      { name: "현동호", room: "213", slot: 2 },
-      { name: "왕재형", room: "213", slot: 3 },
-      { name: "김종후", room: "213", slot: 4 },
-      { name: "안시훈", room: "214", slot: 1 },
-      { name: "오형준", room: "214", slot: 2 },
-      { name: "김예범", room: "214", slot: 3 },
-      { name: "성지훈", room: "215", slot: 1 },
-      { name: "정지호", room: "215", slot: 2 },
-      { name: "고유빈", room: "215", slot: 3 },
-      { name: "김현우", room: "215", slot: 4 },
-    ],
+    people: [],
   };
 }
 
@@ -1988,8 +1930,9 @@ function throwHttpError(statusCode, message) {
 
 function toggleAttendanceForCurrentUser(session) {
   if (!session || session.role !== "student") {
-    throwHttpError(403, "?숈깮留?異쒖꽍泥댄겕瑜??????덉뒿?덈떎.");
+    throwHttpError(403, "학생만 출석 체크를 할 수 있습니다.");
   }
 
   throwHttpError(410, "출석 체크는 프론트엔드에서만 처리됩니다. 페이지를 새로고침해주세요.");
 }
+

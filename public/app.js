@@ -19,7 +19,7 @@ const state = {
   selectedSlot: 0,
   intervals: [],
   overnights: [],
-  selectedDay: getCurrentSeoulWeekdayKey(),
+  selectedDay: getCurrentSeoulWeekdayKey() || "MON",
   activeTab: "settings",
   dashboardRooms: [],
   dashboardFilter: "ALL",
@@ -412,8 +412,15 @@ function handleDayButtonClick(event) {
 }
 
 function renderDayButtons() {
+  const todayDayKey = getCurrentSeoulWeekdayKey();
   for (const button of elements.dayTabs.querySelectorAll(".day-button")) {
     button.classList.toggle("is-active", button.dataset.day === state.selectedDay);
+    button.classList.toggle("is-today", button.dataset.day === todayDayKey);
+    if (button.dataset.day === todayDayKey) {
+      button.setAttribute("aria-current", "date");
+    } else {
+      button.removeAttribute("aria-current");
+    }
   }
 }
 
@@ -779,11 +786,9 @@ function renderChart() {
   const innerWidth = width - margin.left - margin.right;
   const rowHeight = 68;
   const chartBottom = margin.top + rowHeight * WEEKDAYS.length;
-  const now = getCurrentSeoulTimeParts();
   const todayDayKey = getCurrentSeoulWeekdayKey();
-  const nowMinutes = Number(now.hour) * 60 + Number(now.minute);
-  const nowX = margin.left + (nowMinutes / 1440) * innerWidth;
-  const nowLabelX = Math.min(Math.max(nowX, margin.left + 40), width - margin.right - 40);
+  const todayHighlightColor = "#e8f1ff";
+  const todayTextColor = "#1a73e8";
 
   const grouped = WEEKDAYS.map((day) => ({
     ...day,
@@ -816,8 +821,12 @@ function renderChart() {
     .map((day, index) => {
       const y = margin.top + index * rowHeight;
       const guideY = y + 33;
-      const dayLabelFill = day.key === todayDayKey ? "#0057d8" : "#111111";
-      const dayLabelWeight = day.key === todayDayKey ? "700" : "400";
+      const isToday = day.key === todayDayKey;
+      const dayLabelFill = isToday ? todayTextColor : "#111111";
+      const dayLabelWeight = isToday ? "700" : "400";
+      const dayHighlight = isToday
+        ? `<rect x="${margin.left}" y="${y + 6}" width="${innerWidth}" height="${rowHeight - 12}" rx="6" fill="${todayHighlightColor}"></rect>`
+        : "";
       const overnightReason = day.overnights
         .map((overnight) => String(overnight.reason || "").trim())
         .filter(Boolean)
@@ -860,6 +869,7 @@ function renderChart() {
             .join("");
 
       return `
+        ${dayHighlight}
         <line x1="${margin.left}" y1="${guideY}" x2="${width - margin.right}" y2="${guideY}" stroke="#eeeeee"></line>
         <text x="${margin.left - 12}" y="${y + 37}" text-anchor="end" fill="${dayLabelFill}" font-weight="${dayLabelWeight}">${day.label}</text>
         ${blocks}
@@ -871,10 +881,6 @@ function renderChart() {
     <svg class="chart-svg" viewBox="0 0 ${width} ${height}">
       ${grid}
       ${rows}
-      <line x1="${nowX}" y1="${margin.top}" x2="${nowX}" y2="${chartBottom}" stroke="#d93025" stroke-width="2"></line>
-      <text x="${nowLabelX}" y="${margin.top - 6}" fill="#d93025" font-size="12" text-anchor="middle">
-        ${escapeHtml(formatKoreanTime(`${now.hour}:${now.minute}`))}
-      </text>
     </svg>
   `;
 
@@ -1231,7 +1237,7 @@ function getCurrentSeoulWeekdayKey() {
     Fri: "FRI",
   };
 
-  return map[weekday] || "MON";
+  return map[weekday] || "";
 }
 
 function getSelectedNameInput() {
@@ -2154,6 +2160,7 @@ async function loadProtectedData() {
         return;
       }
 
+      renderDayButtons();
       refreshDashboard();
       renderChart();
       loadMessages();
@@ -3201,7 +3208,7 @@ function renderAdminDraftStudentRow(draft) {
       <td><select class="text-input" data-admin-draft-grade>${getAdminGradeOptionsMarkup(draft.grade)}</select></td>
       <td>
         <div class="admin-cell-actions">
-          <span class="admin-default-password">초기 비밀번호 3141</span>
+          <span class="admin-default-password">초기 비밀번호 0000</span>
           <button type="button" data-admin-draft-save="${escapeHtml(draft.id)}">저장</button>
         </div>
       </td>
@@ -3635,7 +3642,7 @@ function switchTab(tabName) {
 
 function applyRoleMode() {
   const isWarden = state.userRole === "warden";
-  elements.roleBadge.textContent = isWarden ? "?ш컧 紐⑤뱶" : `?숈깮 紐⑤뱶${state.loginName ? ` (${state.loginName})` : ""}`;
+  elements.roleBadge.textContent = isWarden ? "사감 모드" : `학생 모드${state.loginName ? ` (${state.loginName})` : ""}`;
   elements.adminTabButton.classList.toggle("hidden", !isWarden);
   elements.adminTab.classList.toggle("hidden", !isWarden);
   elements.messageComposer.classList.toggle("hidden", isWarden);
@@ -3658,7 +3665,7 @@ async function loadProtectedData() {
   state.loginName = payload.loginName || state.loginName || "";
   state.people = Array.isArray(payload.people) ? payload.people : [];
   state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
-  state.wardenName = String(payload.wardenName || state.wardenName || "?ш컧");
+  state.wardenName = String(payload.wardenName || state.wardenName || "사감");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -3758,7 +3765,7 @@ async function loadProtectedData() {
   state.loginName = payload.loginName || state.loginName || "";
   state.people = Array.isArray(payload.people) ? payload.people : [];
   state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
-  state.wardenName = String(payload.wardenName || state.wardenName || "?ш컧");
+  state.wardenName = String(payload.wardenName || state.wardenName || "사감");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -3858,7 +3865,7 @@ async function loadProtectedData() {
   state.loginName = payload.loginName || state.loginName || "";
   state.people = Array.isArray(payload.people) ? payload.people : [];
   state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
-  state.wardenName = String(payload.wardenName || state.wardenName || "??");
+  state.wardenName = String(payload.wardenName || state.wardenName || "사감");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -3902,6 +3909,7 @@ async function loadProtectedData() {
         return;
       }
 
+      renderDayButtons();
       refreshDashboard();
       renderChart();
       loadMessages();
@@ -4893,7 +4901,7 @@ function populateAdminControls() {
     elements.adminGradeInput.value = "1";
   }
   if (!String(elements.adminPasswordInput.value || "").trim()) {
-    elements.adminPasswordInput.value = "3141";
+    elements.adminPasswordInput.value = "0000";
   }
 }
 
@@ -5149,7 +5157,7 @@ async function addStudent() {
       body: JSON.stringify({ name, room, slot, grade, password }),
     });
     elements.adminNameInput.value = "";
-    elements.adminPasswordInput.value = "3141";
+    elements.adminPasswordInput.value = "0000";
     await loadProtectedData();
     switchTab("admin");
     setMessage("학생을 추가했습니다.");
@@ -6336,7 +6344,7 @@ function populateAdminControls() {
     elements.adminGradeInput.value = "1";
   }
   if (!String(elements.adminPasswordInput.value || "").trim()) {
-    elements.adminPasswordInput.value = "3141";
+    elements.adminPasswordInput.value = "0000";
   }
 }
 
@@ -6594,7 +6602,7 @@ async function addStudent() {
       body: JSON.stringify({ name, room, slot, grade, password }),
     });
     elements.adminNameInput.value = "";
-    elements.adminPasswordInput.value = "3141";
+    elements.adminPasswordInput.value = "0000";
     await loadProtectedData();
     switchTab("admin");
     setMessage("학생을 추가했습니다.");
@@ -6726,7 +6734,7 @@ async function loadProtectedData() {
   state.loginName = payload.loginName || state.loginName || "";
   state.people = Array.isArray(payload.people) ? payload.people : [];
   state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
-  state.wardenName = String(payload.wardenName || state.wardenName || "??");
+  state.wardenName = String(payload.wardenName || state.wardenName || "사감");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -6937,7 +6945,7 @@ async function loadProtectedData() {
   state.loginName = payload.loginName || state.loginName || "";
   state.people = Array.isArray(payload.people) ? payload.people : [];
   state.authNames = Array.isArray(payload.authNames) ? payload.authNames : state.authNames;
-  state.wardenName = String(payload.wardenName || state.wardenName || "??");
+  state.wardenName = String(payload.wardenName || state.wardenName || "사감");
   state.roomChoices = payload.rooms || [];
   state.slotChoices = payload.slots || [];
 
@@ -6981,6 +6989,7 @@ async function loadProtectedData() {
         return;
       }
 
+      renderDayButtons();
       refreshDashboard();
       renderChart();
       loadMessages();

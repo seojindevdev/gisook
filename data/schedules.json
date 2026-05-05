@@ -18,7 +18,7 @@
     },
     "김태흔": {
       "profile": {
-        "room": "203"
+        "room": "201"
       },
       "intervals": [],
       "overnights": [],
@@ -87,8 +87,19 @@
           "phone": "X"
         }
       ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.648Z"
     },
     "노우혁": {
       "profile": {
@@ -153,8 +164,19 @@
           "phone": "X"
         }
       ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.649Z"
     },
     "이원교": {
       "profile": {
@@ -169,8 +191,19 @@
         "room": "204"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.649Z"
     },
     "지연우": {
       "profile": {
@@ -243,8 +276,19 @@
         "room": "206"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.649Z"
     },
     "이현명": {
       "profile": {
@@ -267,8 +311,14 @@
         "room": "207"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "TUE",
+          "reason": "외박",
+          "targetDate": "2026-05-05"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:39:21.161Z"
     },
     "김세훈": {
       "profile": {
@@ -316,8 +366,14 @@
         "room": "208"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "TUE",
+          "reason": "외박",
+          "targetDate": "2026-05-05"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:39:21.161Z"
     },
     "이승민": {
       "profile": {
@@ -340,8 +396,14 @@
         "room": "209"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "TUE",
+          "reason": "외박",
+          "targetDate": "2026-05-05"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:39:21.161Z"
     },
     "양민우": {
       "profile": {
@@ -389,14 +451,6 @@
           "phone": "X"
         },
         {
-          "day": "TUE",
-          "start": "19:30",
-          "end": "23:10",
-          "reason": "",
-          "outing": "O",
-          "phone": "X"
-        },
-        {
           "day": "WED",
           "start": "19:00",
           "end": "21:00",
@@ -406,7 +460,7 @@
         }
       ],
       "overnights": [],
-      "updatedAt": "2026-04-02T15:20:04.037Z"
+      "updatedAt": "2026-05-05T13:36:21.247Z"
     },
     "이호진": {
       "profile": {
@@ -433,21 +487,24 @@
       "overnights": [],
       "updatedAt": "2026-04-01T13:57:13.764Z"
     },
-    "현준호": {
-      "profile": {
-        "room": "211"
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
-    },
     "장예헌": {
       "profile": {
         "room": "212"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.649Z"
     },
     "서정호": {
       "profile": {
@@ -537,16 +594,14 @@
           "phone": "X"
         }
       ],
-      "overnights": [],
-      "updatedAt": "2026-04-01T13:57:13.764Z"
-    },
-    "임재현": {
-      "profile": {
-        "room": "213"
-      },
-      "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "TUE",
+          "reason": "외박",
+          "targetDate": "2026-05-05"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:39:21.161Z"
     },
     "김정욱": {
       "profile": {
@@ -561,8 +616,14 @@
         "room": "214"
       },
       "intervals": [],
-      "overnights": [],
-      "updatedAt": null
+      "overnights": [
+        {
+          "day": "TUE",
+          "reason": "외박",
+          "targetDate": "2026-05-05"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:39:21.161Z"
     },
     "오현준": {
       "profile": {
@@ -670,6 +731,49 @@
       ],
       "overnights": [],
       "updatedAt": "2026-04-01T13:57:13.764Z"
+    },
+    "허우준": {
+      "profile": {
+        "room": "203"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "박찬영": {
+      "profile": {
+        "room": "210"
+      },
+      "intervals": [],
+      "overnights": [
+        {
+          "day": "WED",
+          "reason": "외박",
+          "targetDate": "2026-05-06"
+        },
+        {
+          "day": "THU",
+          "reason": "외박",
+          "targetDate": "2026-05-07"
+        }
+      ],
+      "updatedAt": "2026-05-05T13:38:45.649Z"
+    },
+    "현솔몬": {
+      "profile": {
+        "room": "211"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
+    },
+    "최병현": {
+      "profile": {
+        "room": "208"
+      },
+      "intervals": [],
+      "overnights": [],
+      "updatedAt": null
     }
   }
 }

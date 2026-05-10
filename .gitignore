@@ -1,3 +1,10 @@
 node_modules/
 board_*.jpg
 rooms_*.jpg
+auth.json
+names.json
+data.json
+data/
+server-*.log
+edge-dump.html
+.codex-*

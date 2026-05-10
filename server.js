@@ -11,6 +11,7 @@ const DATA_FILE_PATH = path.join(ROOT_DIR, "data.json");
 const LEGACY_DB_PATH = path.join(DATA_DIR, "schedules.json");
 const LEGACY_MESSAGES_PATH = path.join(DATA_DIR, "messages.json");
 const LEGACY_ATTENDANCE_PATH = path.join(DATA_DIR, "attendance.json");
+const PARENT_API_REQUEST_LOG_PATH = path.join(DATA_DIR, "parent-api-requests.json");
 const LEGACY_NAMES_PATH = path.join(ROOT_DIR, "names.json");
 const LEGACY_AUTH_PATH = path.join(ROOT_DIR, "auth.json");
 const PORT = Number(process.env.PORT || 3000);
@@ -20,10 +21,34 @@ const MAX_ALLOWED_MINUTES = 24 * 60;
 const ROOM_NUMBERS = Array.from({ length: 20 }, (_, index) => String(201 + index));
 const SLOT_NUMBERS = [1, 2, 3, 4];
 const SESSION_COOKIE_NAME = "gisook_session";
+const PROTECTED_TAB_PIN_TOKEN_HEADER = "x-protected-tab-pin-token";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_STUDENT_PASSWORD = "0000";
 const LEGACY_STUDENT_PASSWORD = "3141";
+const DEFAULT_PHONE_SUBMITTED = true;
+const DEFAULT_PHONE_TAKEN_AT = null;
+const DEFAULT_PHONE_CONFISCATION = null;
+const DEFAULT_OUTING_ACTIVE = false;
+const DEFAULT_OUTING_STARTED_AT = null;
+const PARENT_LOGIN_NAME = "학부모";
+const DEFAULT_PARENT_PASSWORD = "seogo1234";
+const PARENT_PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
+const PARENT_PASSWORD_HASH_ITERATIONS = 120000;
+const PARENT_PASSWORD_HASH_KEY_LENGTH = 32;
+const DEFAULT_PROTECTED_TAB_PIN_HASH = {
+  algorithm: PARENT_PASSWORD_HASH_ALGORITHM,
+  iterations: PARENT_PASSWORD_HASH_ITERATIONS,
+  salt: "Gv45Wvfsvmm8Yok66riiwQ==",
+  digest: "dvPrHp2IvGr06tsWhIxnHr0kn1Xc/RWvWGLdcv2RXJM=",
+};
+const PARENT_API_REQUEST_LOG_LIMIT = 500;
+const PARENT_OVERNIGHT_REASON = "학부모 신청 외박";
 const authSessions = new Map();
+const dashboardEventClients = new Set();
+const attendanceEventClients = new Set();
+let dashboardEventId = 0;
+let attendanceEventId = 0;
 
 const WEEKDAYS = [
   { key: "MON", label: "월", intl: "Mon" },
@@ -106,6 +131,7 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
     sendJson(res, 200, {
       names: readRoster().map((person) => person.name),
       wardenName: authConfig.wardenName,
+      parentModeEnabled: true,
     });
     return;
   }
@@ -115,6 +141,13 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
       authenticated: Boolean(session),
       role: session?.role || null,
       loginName: session?.loginName || null,
+    });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/auth/protected-tab-pin/status") {
+    sendJson(res, 200, {
+      remembered: Boolean(session?.role === "warden" && session.protectedTabPinRemembered),
     });
     return;
   }
@@ -171,6 +204,78 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
     return;
   }
 
+  if (req.method === "POST" && pathname === "/api/auth/protected-tab-pin") {
+    if (!session) {
+      throwHttpError(401, "로그인이 필요합니다.");
+    }
+
+    assertWardenSession(session);
+    const payload = await readJsonBody(req);
+    const pin = String(payload?.pin || "");
+    const authConfig = readPreparedAuthConfig(readRoster());
+    if (!verifyPasswordHash(pin, authConfig.protectedTabPinHash, DEFAULT_PROTECTED_TAB_PIN_HASH)) {
+      throwHttpError(401, "PIN이 올바르지 않습니다.");
+    }
+
+    const protectedTabPinToken = createSessionToken();
+    session.protectedTabPinToken = protectedTabPinToken;
+    if (payload?.remember) {
+      session.protectedTabPinRemembered = true;
+    }
+
+    sendJson(res, 200, {
+      verified: true,
+      remembered: Boolean(session.protectedTabPinRemembered),
+      token: protectedTabPinToken,
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/auth/parent-login") {
+    logParentApiRequest(req, session, {
+      action: "parent-login",
+      result: session ? "blocked-existing-session" : "attempt",
+    });
+    if (session) {
+      throwHttpError(409, "이미 로그인 중입니다. 다른 계정으로 로그인하려면 먼저 로그아웃하세요.");
+    }
+
+    const payload = await readJsonBody(req);
+    const password = String(payload?.password || "");
+    const authConfig = readPreparedAuthConfig(readRoster());
+    if (!verifyPasswordHash(password, authConfig.parentPasswordHash)) {
+      logParentApiRequest(req, session, {
+        action: "parent-login",
+        result: "failure",
+      });
+      throwHttpError(401, "학부모 비밀번호가 올바르지 않습니다.");
+    }
+
+    const token = createSessionToken();
+    authSessions.set(token, {
+      expiresAt: Date.now() + SESSION_TTL_MS,
+      role: "parent",
+      loginName: PARENT_LOGIN_NAME,
+    });
+    logParentApiRequest(req, { role: "parent", loginName: PARENT_LOGIN_NAME }, {
+      action: "parent-login",
+      result: "success",
+    });
+    sendJson(
+      res,
+      200,
+      {
+        authenticated: true,
+        role: "parent",
+        loginName: PARENT_LOGIN_NAME,
+      },
+      {
+        "Set-Cookie": serializeSessionCookie(token),
+      },
+    );
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/auth/change-password") {
     const payload = await readJsonBody(req);
     sendJson(res, 200, changeOwnPassword(session, payload));
@@ -202,7 +307,9 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
     const roster = readRoster();
     const authConfig = readPreparedAuthConfig(roster);
     const people =
-      session.role === "warden" ? roster : [assertAllowedPerson(session.loginName, roster)];
+      session.role === "warden" || session.role === "parent"
+        ? roster
+        : [assertAllowedPerson(session.loginName, roster)];
 
     sendJson(res, 200, {
       role: session.role,
@@ -210,6 +317,7 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
       people,
       authNames: roster.map((person) => person.name),
       wardenName: authConfig.wardenName,
+      parentModeEnabled: true,
       weekdays: WEEKDAYS,
       rooms: ROOM_NUMBERS,
       slots: SLOT_NUMBERS,
@@ -219,12 +327,51 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
   }
 
   if (req.method === "GET" && pathname === "/api/dashboard") {
-    sendJson(res, 200, buildDashboardResponse());
+    assertWardenSession(session);
+    sendJson(res, 200, buildDashboardResponse(session, { includeProtectedLogs: hasProtectedWardenAccess(req, session) }));
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/dashboard/events") {
+    assertWardenSession(session);
+    handleDashboardEvents(req, res, session);
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/attendance/status") {
+    sendJson(res, 200, buildAttendanceStatusResponse(session));
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/attendance/events") {
+    handleAttendanceEvents(req, res, session);
+    return;
+  }
+
+  if (req.method === "PUT" && pathname === "/api/attendance/mode") {
+    assertWardenSession(session);
+    const payload = await readJsonBody(req);
+    const result = saveAttendanceMode(Boolean(payload?.active));
+    sendJson(res, 200, result);
+    broadcastDashboardChange("attendance-mode");
+    broadcastAttendanceChange("attendance-mode", result);
     return;
   }
 
   if (req.method === "POST" && pathname === "/api/attendance/toggle") {
-    sendJson(res, 200, toggleAttendanceForCurrentUser(session));
+    const payload = await readJsonBody(req);
+    const result = toggleAttendanceForCurrentUser(session, payload);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("attendance-toggle");
+    broadcastAttendanceChange("attendance-toggle", result);
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/attendance/reset") {
+    const result = resetAttendanceForToday(session);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("attendance-reset");
+    broadcastAttendanceChange("attendance-reset", result);
     return;
   }
 
@@ -242,32 +389,76 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
   }
 
   if (pathname === "/api/admin/students" && req.method === "POST") {
-    assertWardenSession(session);
+    assertProtectedWardenSession(req, session);
     const payload = await readJsonBody(req);
-    sendJson(res, 200, createStudent(payload));
+    const result = createStudent(payload);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("student-create");
     return;
   }
 
   const adminStudentPasswordMatch = pathname.match(/^\/api\/admin\/students\/(.+)\/password$/);
   if (adminStudentPasswordMatch && req.method === "PUT") {
-    assertWardenSession(session);
+    assertProtectedWardenSession(req, session);
     const payload = await readJsonBody(req);
     sendJson(res, 200, updateStudentPassword(adminStudentPasswordMatch[1], payload));
     return;
   }
 
+  const phoneConfiscationMatch = pathname.match(/^\/api\/admin\/phone-confiscations\/(.+)$/);
+  if (phoneConfiscationMatch && req.method === "PUT") {
+    assertProtectedWardenSession(req, session);
+    const payload = await readJsonBody(req);
+    const result = savePhoneConfiscation(phoneConfiscationMatch[1], payload);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("phone-confiscation");
+    return;
+  }
+
   const adminStudentMatch = pathname.match(/^\/api\/admin\/students\/(.+)$/);
   if (adminStudentMatch && req.method === "PUT") {
-    assertWardenSession(session);
+    assertProtectedWardenSession(req, session);
     const payload = await readJsonBody(req);
-    sendJson(res, 200, updateStudentProfile(adminStudentMatch[1], payload));
+    const result = updateStudentProfile(adminStudentMatch[1], payload);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("student-update");
     return;
   }
 
   if (adminStudentMatch && req.method === "DELETE") {
-    assertWardenSession(session);
-    sendJson(res, 200, deleteStudent(adminStudentMatch[1]));
+    assertProtectedWardenSession(req, session);
+    const result = deleteStudent(adminStudentMatch[1]);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("student-delete");
     return;
+  }
+
+  if (pathname === "/api/parent/overnights") {
+    assertParentSession(session);
+
+    if (req.method === "GET") {
+      logParentApiRequest(req, session, {
+        action: "parent-overnights-read",
+        selectedName: canonicalizeKnownPersonName(requestUrl.searchParams.get("name") || ""),
+      });
+      sendJson(res, 200, buildParentOvernightsResponse(requestUrl.searchParams));
+      return;
+    }
+
+    if (req.method === "PUT") {
+      const payload = await readJsonBody(req);
+      logParentApiRequest(req, session, {
+        action: "parent-overnights-save",
+        selectedName: canonicalizeKnownPersonName(payload?.name || ""),
+        dateCount: Array.isArray(payload?.dates) ? payload.dates.length : 0,
+      });
+      const result = saveParentOvernights(payload);
+      sendJson(res, 200, result);
+      broadcastDashboardChange("parent-overnight");
+      return;
+    }
+
+    throwHttpError(405, "지원하지 않는 메서드입니다.");
   }
 
   const userMatch = pathname.match(/^\/api\/users\/(.+)$/);
@@ -283,7 +474,9 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
 
   if (req.method === "PUT") {
     const payload = await readJsonBody(req);
-    sendJson(res, 200, saveUserSchedule(session, userName, payload));
+    const result = saveUserSchedule(session, userName, payload);
+    sendJson(res, 200, result);
+    broadcastDashboardChange("user-update");
     return;
   }
 
@@ -320,6 +513,106 @@ function serveStatic(req, res, pathname) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+function handleDashboardEvents(req, res, session) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write("retry: 3000\n");
+  res.write("event: connected\n");
+  res.write(`data: ${JSON.stringify({ role: session.role, at: new Date().toISOString() })}\n\n`);
+
+  const client = {
+    res,
+    heartbeat: setInterval(() => {
+      try {
+        res.write(": heartbeat\n\n");
+      } catch (_error) {
+        cleanup();
+      }
+    }, 25000),
+  };
+
+  function cleanup() {
+    clearInterval(client.heartbeat);
+    dashboardEventClients.delete(client);
+  }
+
+  dashboardEventClients.add(client);
+  req.on("close", cleanup);
+}
+
+function handleAttendanceEvents(req, res, session) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write("retry: 3000\n");
+  res.write("event: connected\n");
+  res.write(`data: ${JSON.stringify({ role: session.role, at: new Date().toISOString() })}\n\n`);
+
+  const client = {
+    res,
+    heartbeat: setInterval(() => {
+      try {
+        res.write(": heartbeat\n\n");
+      } catch (_error) {
+        cleanup();
+      }
+    }, 25000),
+  };
+
+  function cleanup() {
+    clearInterval(client.heartbeat);
+    attendanceEventClients.delete(client);
+  }
+
+  attendanceEventClients.add(client);
+  req.on("close", cleanup);
+}
+
+function broadcastDashboardChange(reason) {
+  const payload = JSON.stringify({
+    reason,
+    at: new Date().toISOString(),
+  });
+
+  for (const client of [...dashboardEventClients]) {
+    try {
+      client.res.write(`id: ${++dashboardEventId}\n`);
+      client.res.write("event: dashboard-change\n");
+      client.res.write(`data: ${payload}\n\n`);
+    } catch (_error) {
+      clearInterval(client.heartbeat);
+      dashboardEventClients.delete(client);
+    }
+  }
+}
+
+function broadcastAttendanceChange(reason, data = {}) {
+  const payload = JSON.stringify({
+    reason,
+    modeActive: Boolean(data.modeActive),
+    attendanceDateKey: data.attendanceDateKey || "",
+    at: new Date().toISOString(),
+  });
+
+  for (const client of [...attendanceEventClients]) {
+    try {
+      client.res.write(`id: ${++attendanceEventId}\n`);
+      client.res.write("event: attendance-change\n");
+      client.res.write(`data: ${payload}\n\n`);
+    } catch (_error) {
+      clearInterval(client.heartbeat);
+      attendanceEventClients.delete(client);
+    }
+  }
+}
+
 function bootstrapFiles() {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -350,6 +643,8 @@ function getDefaultAuthDocument() {
   return {
     wardenName: "사감",
     wardenPassword: "사감1",
+    parentPasswordHash: createPasswordHash(DEFAULT_PARENT_PASSWORD),
+    protectedTabPinHash: normalizePasswordHash(DEFAULT_PROTECTED_TAB_PIN_HASH, DEFAULT_PROTECTED_TAB_PIN_HASH),
     studentPasswords: {},
   };
 }
@@ -378,6 +673,8 @@ function readPreparedAuthConfig(roster) {
   const rawJson = JSON.stringify({
     wardenName: String(raw?.wardenName || "사감"),
     wardenPassword: String(raw?.wardenPassword || "사감1"),
+    parentPasswordHash: normalizePasswordHash(raw?.parentPasswordHash || raw?.parentPassword, DEFAULT_PARENT_PASSWORD),
+    protectedTabPinHash: normalizePasswordHash(raw?.protectedTabPinHash || raw?.protectedTabPin, DEFAULT_PROTECTED_TAB_PIN_HASH),
     studentPasswords:
       raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
         ? raw.studentPasswords
@@ -392,6 +689,8 @@ function readPreparedAuthConfig(roster) {
     ? {
         wardenName: String(raw?.wardenName || "사감"),
         wardenPassword: String(raw?.wardenPassword || "사감1"),
+        parentPasswordHash: normalizePasswordHash(raw?.parentPasswordHash || raw?.parentPassword, DEFAULT_PARENT_PASSWORD),
+        protectedTabPinHash: normalizePasswordHash(raw?.protectedTabPinHash || raw?.protectedTabPin, DEFAULT_PROTECTED_TAB_PIN_HASH),
         studentPasswords:
           raw?.studentPasswords && typeof raw.studentPasswords === "object" && !Array.isArray(raw.studentPasswords)
             ? raw.studentPasswords
@@ -425,14 +724,86 @@ function normalizeAuthConfig(raw, roster) {
   return {
     wardenName: String(raw?.wardenName || "사감"),
     wardenPassword: String(raw?.wardenPassword || "사감1"),
+    parentPasswordHash: normalizePasswordHash(raw?.parentPasswordHash || raw?.parentPassword, DEFAULT_PARENT_PASSWORD),
+    protectedTabPinHash: normalizePasswordHash(raw?.protectedTabPinHash || raw?.protectedTabPin, DEFAULT_PROTECTED_TAB_PIN_HASH),
     studentPasswords,
   };
+}
+
+function createPasswordHash(password) {
+  const salt = crypto.randomBytes(16).toString("base64");
+  const digest = crypto
+    .pbkdf2Sync(
+      String(password || ""),
+      salt,
+      PARENT_PASSWORD_HASH_ITERATIONS,
+      PARENT_PASSWORD_HASH_KEY_LENGTH,
+      "sha256",
+    )
+    .toString("base64");
+
+  return {
+    algorithm: PARENT_PASSWORD_HASH_ALGORITHM,
+    iterations: PARENT_PASSWORD_HASH_ITERATIONS,
+    salt,
+    digest,
+  };
+}
+
+function normalizePasswordHash(value, fallbackValue) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const algorithm = String(value.algorithm || "");
+    const iterations = Number(value.iterations);
+    const salt = String(value.salt || "");
+    const digest = String(value.digest || "");
+
+    if (
+      algorithm === PARENT_PASSWORD_HASH_ALGORITHM &&
+      Number.isInteger(iterations) &&
+      iterations >= 100000 &&
+      salt &&
+      digest
+    ) {
+      return {
+        algorithm,
+        iterations,
+        salt,
+        digest,
+      };
+    }
+  }
+
+  if (typeof value === "string" && value) {
+    return createPasswordHash(value);
+  }
+
+  if (fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue)) {
+    return normalizePasswordHash(fallbackValue, "");
+  }
+
+  return createPasswordHash(String(fallbackValue || ""));
+}
+
+function verifyPasswordHash(password, hash, fallbackValue = DEFAULT_PARENT_PASSWORD) {
+  const normalizedHash = normalizePasswordHash(hash, fallbackValue);
+  const expected = Buffer.from(normalizedHash.digest, "base64");
+  const actual = crypto.pbkdf2Sync(
+    String(password || ""),
+    normalizedHash.salt,
+    normalizedHash.iterations,
+    expected.length,
+    "sha256",
+  );
+
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 }
 
 function writeAuthConfig(config) {
   writeJsonFile(LEGACY_AUTH_PATH, {
     wardenName: String(config?.wardenName || "사감"),
     wardenPassword: String(config?.wardenPassword || "사감1"),
+    parentPasswordHash: normalizePasswordHash(config?.parentPasswordHash, DEFAULT_PARENT_PASSWORD),
+    protectedTabPinHash: normalizePasswordHash(config?.protectedTabPinHash, DEFAULT_PROTECTED_TAB_PIN_HASH),
     studentPasswords:
       config?.studentPasswords && typeof config.studentPasswords === "object" && !Array.isArray(config.studentPasswords)
         ? config.studentPasswords
@@ -448,7 +819,14 @@ function getDefaultMessagesDocument() {
 
 function getDefaultAttendanceDocument() {
   return {
+    modeActive: false,
     records: {},
+  };
+}
+
+function getDefaultParentApiRequestLog() {
+  return {
+    requests: [],
   };
 }
 
@@ -534,6 +912,9 @@ function normalizeDatabaseDocument(raw, roster = []) {
 
   return {
     users: normalizedUsers,
+    phoneLogs: normalizePhoneLogs(raw.phoneLogs),
+    outingLogs: normalizeOutingLogs(raw.outingLogs),
+    overnightLogs: normalizeOvernightLogs(raw.overnightLogs),
   };
 }
 
@@ -562,6 +943,7 @@ function normalizeAttendanceDocument(raw) {
   }
 
   return {
+    modeActive: Boolean(raw.modeActive),
     records:
       raw.records && typeof raw.records === "object" && !Array.isArray(raw.records)
         ? Object.fromEntries(
@@ -631,6 +1013,38 @@ function assertWardenSession(session) {
   }
 }
 
+function assertProtectedWardenSession(req, session) {
+  assertWardenSession(session);
+  if (!hasProtectedWardenAccess(req, session)) {
+    throwHttpError(403, "PIN 인증이 필요한 기능입니다.");
+  }
+}
+
+function hasProtectedWardenAccess(req, session) {
+  if (!session || session.role !== "warden") {
+    return false;
+  }
+
+  if (session.protectedTabPinRemembered) {
+    return true;
+  }
+
+  const submittedToken = getFirstHeaderValue(req.headers[PROTECTED_TAB_PIN_TOKEN_HEADER]);
+  return Boolean(submittedToken && session.protectedTabPinToken && safeCompareText(submittedToken, session.protectedTabPinToken));
+}
+
+function safeCompareText(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""));
+  const rightBuffer = Buffer.from(String(right || ""));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function assertParentSession(session) {
+  if (!session || session.role !== "parent") {
+    throwHttpError(403, "학부모 모드에서만 사용할 수 있습니다.");
+  }
+}
+
 function parseCookies(headerValue) {
   return String(headerValue || "")
     .split(";")
@@ -665,9 +1079,22 @@ function buildUserResponse(session, userName) {
   const now = getCurrentLocalParts();
   const database = readPreparedDatabase(now, roster);
   const userRecord = database.users[person.name];
+  const attendanceDocument = readPreparedAttendance(now, roster);
+  const attendanceDateKey = formatDateKey(now);
+  const attendanceRecord =
+    attendanceDocument.records?.[attendanceDateKey] &&
+    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
+    !Array.isArray(attendanceDocument.records[attendanceDateKey])
+      ? attendanceDocument.records[attendanceDateKey]
+      : {};
   const intervals = sanitizeIntervals(userRecord?.intervals || []);
   const overnights = sanitizeStoredOvernights(userRecord?.overnights || [], now);
-  const status = computeStatus(intervals, overnights, now);
+  const phoneSubmitted = normalizePhoneSubmitted(userRecord?.phoneSubmitted);
+  const phoneTakenAt = resolvePhoneTakenAt(userRecord, phoneSubmitted);
+  const phoneConfiscation = getPhoneConfiscationInfo(userRecord, now);
+  const outingActive = normalizeOutingActive(userRecord?.outingActive);
+  const outingStartedAt = resolveOutingStartedAt(userRecord, outingActive);
+  const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt);
 
   return {
     name: person.name,
@@ -676,6 +1103,14 @@ function buildUserResponse(session, userName) {
     exists: Boolean(userRecord),
     intervals,
     overnights,
+    phoneSubmitted,
+    phoneTakenAt,
+    phoneConfiscation,
+    outingActive,
+    outingStartedAt,
+    attendanceModeActive: Boolean(attendanceDocument.modeActive),
+    attendanceDateKey,
+    attendanceChecked: Boolean(attendanceRecord[person.name]),
     updatedAt: userRecord?.updatedAt || null,
     status,
   };
@@ -689,7 +1124,7 @@ function saveUserSchedule(session, userName, payload) {
     throwHttpError(400, "잘못된 저장 요청입니다.");
   }
 
-  if (!Array.isArray(payload.intervals)) {
+  if (payload.intervals !== undefined && !Array.isArray(payload.intervals)) {
     throwHttpError(400, "스케줄 기록은 배열이어야 합니다.");
   }
 
@@ -698,21 +1133,88 @@ function saveUserSchedule(session, userName, payload) {
   }
 
   const now = getCurrentLocalParts();
-  const intervals = payload.intervals
-    .map((interval, index) => normalizeInterval(interval, index))
-    .sort(compareIntervals);
-  assertIntervalsDoNotOverlap(intervals);
-
-  const overnights = (payload.overnights || [])
-    .map((overnight, index) => normalizeIncomingOvernight(overnight, index, now))
-    .filter(Boolean)
-    .sort(compareOvernights);
-
   const database = readPreparedDatabase(now, roster);
+  const previousRecord =
+    database.users[person.name] && typeof database.users[person.name] === "object" && !Array.isArray(database.users[person.name])
+      ? database.users[person.name]
+      : null;
+  const previousIntervals = sanitizeIntervals(previousRecord?.intervals || []);
+  const intervals =
+    payload.intervals === undefined
+      ? previousIntervals
+      : payload.intervals.map((interval, index) => normalizeInterval(interval, index)).sort(compareIntervals);
+  if (payload.intervals !== undefined) {
+    assertIntervalsDoNotOverlap(intervals);
+  }
+
+  const previousOvernights = sanitizeStoredOvernights(previousRecord?.overnights || [], now);
+  const overnights =
+    payload.overnights === undefined
+      ? previousOvernights
+      : payload.overnights
+          .map((overnight, index) => normalizeIncomingOvernight(overnight, index, now))
+          .filter(Boolean)
+          .sort(compareOvernights);
+  const phoneSubmitted =
+    payload.phoneSubmitted === undefined
+      ? normalizePhoneSubmitted(previousRecord?.phoneSubmitted)
+      : normalizePhoneSubmitted(payload.phoneSubmitted);
+  const previousPhoneSubmitted = normalizePhoneSubmitted(previousRecord?.phoneSubmitted);
+  const previousPhoneTakenAt = resolvePhoneTakenAt(previousRecord, previousPhoneSubmitted);
+  const phoneConfiscation = normalizePhoneConfiscation(previousRecord?.phoneConfiscation, now);
+  const savedAt = new Date().toISOString();
+  const previousOutingActive = normalizeOutingActive(previousRecord?.outingActive);
+  const previousOutingStartedAt = resolveOutingStartedAt(previousRecord, previousOutingActive);
+  const previousStatus = resolveStatusWithManualOuting(
+    computeStatus(previousIntervals, previousOvernights, now),
+    previousOutingActive,
+    previousOutingStartedAt,
+  );
+  if ((payload.phoneSubmitted !== undefined || payload.outingActive !== undefined) && previousStatus.isOvernight) {
+    throwHttpError(403, "외박 중인 학생은 핸드폰/외출 상태를 변경할 수 없습니다.");
+  }
+  if (
+    payload.phoneSubmitted !== undefined &&
+    previousPhoneSubmitted === true &&
+    phoneSubmitted === false &&
+    phoneConfiscation
+  ) {
+    throwHttpError(403, "핸드폰 압수 중에는 핸드폰을 가져갈 수 없습니다.");
+  }
+  const phoneTakenAt =
+    phoneSubmitted
+      ? DEFAULT_PHONE_TAKEN_AT
+      : payload.phoneSubmitted === undefined || previousPhoneSubmitted === false
+        ? previousPhoneTakenAt
+        : savedAt;
+  const outingActive =
+    payload.outingActive === undefined
+      ? normalizeOutingActive(previousRecord?.outingActive)
+      : normalizeOutingActive(payload.outingActive);
+  const outingStartedAt =
+    outingActive
+      ? payload.outingActive === undefined || previousOutingActive
+        ? previousOutingStartedAt
+        : savedAt
+      : DEFAULT_OUTING_STARTED_AT;
+  const phoneLogs = normalizePhoneLogs(database.phoneLogs);
+  if (payload.phoneSubmitted !== undefined && previousPhoneSubmitted === false && phoneSubmitted === true) {
+    phoneLogs.unshift(createPhoneLog(person.name, previousPhoneTakenAt || savedAt, savedAt));
+  }
+  const outingLogs = normalizeOutingLogs(database.outingLogs);
+  if (payload.outingActive !== undefined && previousOutingActive === true && outingActive === false) {
+    outingLogs.unshift(createOutingLog(person.name, previousOutingStartedAt || savedAt, savedAt));
+  }
+
   database.users[person.name] = {
     profile: {
       room: person.room,
     },
+    phoneSubmitted,
+    phoneTakenAt,
+    phoneConfiscation,
+    outingActive,
+    outingStartedAt,
     intervals: intervals.map(({ day, start, end, reason, outing, phone }) => ({
       day,
       start,
@@ -726,24 +1228,39 @@ function saveUserSchedule(session, userName, payload) {
       reason,
       targetDate,
     })),
-    updatedAt: new Date().toISOString(),
+    updatedAt: savedAt,
   };
+  database.phoneLogs = phoneLogs.slice(0, 200);
+  database.outingLogs = outingLogs.slice(0, 200);
   writeDatabase(database);
 
   return buildUserResponse(session, person.name);
 }
 
-function buildDashboardResponse() {
+function buildDashboardResponse(session, options = {}) {
+  const includeProtectedLogs = Boolean(options.includeProtectedLogs);
   const roster = readRoster();
   const now = getCurrentLocalParts();
   const database = readPreparedDatabase(now, roster);
+  const attendanceDocument = readPreparedAttendance(now, roster);
   const attendanceDateKey = formatDateKey(now);
+  const attendanceRecord =
+    attendanceDocument.records?.[attendanceDateKey] &&
+    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
+    !Array.isArray(attendanceDocument.records[attendanceDateKey])
+      ? attendanceDocument.records[attendanceDateKey]
+      : {};
 
   const users = roster.map((person) => {
     const userRecord = database.users[person.name];
     const intervals = sanitizeIntervals(userRecord?.intervals || []);
     const overnights = sanitizeStoredOvernights(userRecord?.overnights || [], now);
-    const status = computeStatus(intervals, overnights, now);
+    const phoneSubmitted = normalizePhoneSubmitted(userRecord?.phoneSubmitted);
+    const phoneTakenAt = resolvePhoneTakenAt(userRecord, phoneSubmitted);
+    const phoneConfiscation = getPhoneConfiscationInfo(userRecord, now);
+    const outingActive = normalizeOutingActive(userRecord?.outingActive);
+    const outingStartedAt = resolveOutingStartedAt(userRecord, outingActive);
+    const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt);
 
     return {
       name: person.name,
@@ -753,10 +1270,15 @@ function buildDashboardResponse() {
       isOut: status.isOut,
       isPhoneOnly: status.isPhoneOnly,
       isOvernight: status.isOvernight,
+      phoneSubmitted,
+      phoneTakenAt,
+      phoneConfiscation,
+      outingActive,
+      outingStartedAt,
       statusLabel: status.statusLabel,
       currentInterval: status.currentInterval,
       currentOvernight: status.currentOvernight,
-      attendanceChecked: false,
+      attendanceChecked: Boolean(attendanceRecord[person.name]),
       updatedAt: userRecord?.updatedAt || null,
     };
   });
@@ -775,6 +1297,11 @@ function buildDashboardResponse() {
            isOut: false,
            isPhoneOnly: false,
           isOvernight: false,
+          phoneSubmitted: null,
+          phoneTakenAt: null,
+          phoneConfiscation: null,
+          outingActive: false,
+          outingStartedAt: null,
           statusLabel: "빈자리",
           currentInterval: null,
           currentOvernight: null,
@@ -789,6 +1316,10 @@ function buildDashboardResponse() {
     present: users.filter((user) => !user.isOut && !user.isPhoneOnly && !user.isOvernight).length,
     out: users.filter((user) => user.isOut).length,
     phone: users.filter((user) => user.isPhoneOnly).length,
+    phoneSubmitted: users.filter((user) => user.phoneSubmitted).length,
+    phoneTaken: users.filter((user) => !user.phoneSubmitted).length,
+    phoneConfiscated: users.filter((user) => user.phoneConfiscation?.active).length,
+    outingActive: users.filter((user) => user.outingActive).length,
     overnight: users.filter((user) => user.isOvernight).length,
     attendanceChecked: users.filter((user) => user.attendanceChecked).length,
   };
@@ -797,9 +1328,207 @@ function buildDashboardResponse() {
     generatedAt: formatNowLabel(now),
     timeZone: TIME_ZONE,
     attendanceDateKey,
+    attendanceModeActive: Boolean(attendanceDocument.modeActive),
     rooms,
     users,
     totals,
+    phoneLogs: includeProtectedLogs ? normalizePhoneLogs(database.phoneLogs).slice(0, 100) : [],
+    outingLogs: includeProtectedLogs ? normalizeOutingLogs(database.outingLogs).slice(0, 100) : [],
+    overnightLogs: includeProtectedLogs ? normalizeOvernightLogs(database.overnightLogs).slice(0, 100) : [],
+  };
+}
+
+function buildAttendanceStatusResponse(session) {
+  const roster = readRoster();
+  const now = getCurrentLocalParts();
+  const attendanceDocument = readPreparedAttendance(now, roster);
+  const attendanceDateKey = formatDateKey(now);
+  const attendanceRecord =
+    attendanceDocument.records?.[attendanceDateKey] &&
+    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
+    !Array.isArray(attendanceDocument.records[attendanceDateKey])
+      ? attendanceDocument.records[attendanceDateKey]
+      : {};
+  const person = session.role === "student" ? assertAllowedPerson(session.loginName, roster) : null;
+  const excluded = person ? isAttendanceExcludedPerson(person, now, roster) : false;
+
+  return {
+    role: session.role,
+    name: person?.name || "",
+    modeActive: Boolean(attendanceDocument.modeActive),
+    attendanceDateKey,
+    checked: person ? Boolean(attendanceRecord[person.name]) : false,
+    excluded,
+  };
+}
+
+function saveAttendanceMode(active) {
+  const roster = readRoster();
+  const now = getCurrentLocalParts();
+  const attendanceDocument = readPreparedAttendance(now, roster);
+  const attendanceDateKey = formatDateKey(now);
+  attendanceDocument.modeActive = Boolean(active);
+  writeAttendance(attendanceDocument);
+
+  return {
+    modeActive: Boolean(attendanceDocument.modeActive),
+    attendanceDateKey,
+  };
+}
+
+function buildParentOvernightsResponse(searchParams) {
+  const roster = readRoster();
+  const now = getCurrentLocalParts();
+  const database = readPreparedDatabase(now, roster);
+  const requestedName = canonicalizeKnownPersonName(searchParams?.get("name") || "");
+  const selectedPerson = requestedName ? findRosterPersonByName(roster, requestedName) : null;
+  const weekDays = getCurrentSchoolWeekDays(now);
+  const selectedDates = selectedPerson
+    ? getSelectedOvernightDates(database.users[selectedPerson.name]?.overnights || [], weekDays, now)
+    : [];
+
+  return {
+    role: "parent",
+    people: roster,
+    weekDays,
+    selectedName: selectedPerson?.name || "",
+    selectedDates,
+  };
+}
+
+function saveParentOvernights(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throwHttpError(400, "학부모 외박 저장 요청 형식이 올바르지 않습니다.");
+  }
+
+  const roster = readRoster();
+  const person = assertAllowedPerson(payload.name, roster);
+  const now = getCurrentLocalParts();
+  const weekDays = getCurrentSchoolWeekDays(now);
+  const weekDateSet = new Set(weekDays.map((day) => day.targetDate));
+  const saveableDaysByDate = new Map(
+    weekDays.filter((day) => !day.isPast).map((day) => [day.targetDate, day]),
+  );
+  const requestedDates = Array.isArray(payload.dates)
+    ? payload.dates.map((date) => String(date || "").trim()).filter((date) => saveableDaysByDate.has(date))
+    : [];
+  const requestedDateSet = new Set(requestedDates);
+  const database = readPreparedDatabase(now, roster);
+  const userRecord =
+    database.users[person.name] && typeof database.users[person.name] === "object" && !Array.isArray(database.users[person.name])
+      ? database.users[person.name]
+      : {
+          profile: { room: person.room },
+          phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+          phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+          phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+          outingActive: DEFAULT_OUTING_ACTIVE,
+          outingStartedAt: DEFAULT_OUTING_STARTED_AT,
+          intervals: [],
+          overnights: [],
+          updatedAt: null,
+        };
+  const existingOvernights = sanitizeStoredOvernights(userRecord.overnights || [], now);
+  const previousParentDateSet = new Set(
+    existingOvernights
+      .filter((overnight) => weekDateSet.has(overnight.targetDate) && overnight.reason === PARENT_OVERNIGHT_REASON)
+      .map((overnight) => overnight.targetDate),
+  );
+  const nextParentDateSet = new Set();
+  const nextOvernights = existingOvernights.filter(
+    (overnight) => !(weekDateSet.has(overnight.targetDate) && overnight.reason === PARENT_OVERNIGHT_REASON),
+  );
+
+  for (const targetDate of requestedDateSet) {
+    const weekDay = saveableDaysByDate.get(targetDate);
+    if (!weekDay || nextOvernights.some((overnight) => overnight.targetDate === targetDate)) {
+      continue;
+    }
+
+    nextOvernights.push({
+      day: weekDay.day,
+      reason: PARENT_OVERNIGHT_REASON,
+      targetDate,
+    });
+    nextParentDateSet.add(targetDate);
+  }
+
+  const savedAt = new Date().toISOString();
+  const overnightLogs = normalizeOvernightLogs(database.overnightLogs);
+  for (const targetDate of requestedDateSet) {
+    if (!previousParentDateSet.has(targetDate) && nextParentDateSet.has(targetDate)) {
+      overnightLogs.unshift(createOvernightLog(person.name, targetDate, "SET", savedAt));
+    }
+  }
+  for (const targetDate of previousParentDateSet) {
+    if (!nextParentDateSet.has(targetDate)) {
+      overnightLogs.unshift(createOvernightLog(person.name, targetDate, "CANCEL", savedAt));
+    }
+  }
+
+  database.users[person.name] = {
+    ...userRecord,
+    profile: { room: person.room },
+    overnights: nextOvernights.sort(compareOvernights),
+    updatedAt: new Date().toISOString(),
+  };
+  database.overnightLogs = overnightLogs.slice(0, 200);
+  writeDatabase(database);
+
+  return buildParentOvernightsResponse(new URLSearchParams({ name: person.name }));
+}
+
+function savePhoneConfiscation(userName, payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throwHttpError(400, "핸드폰 압수 설정 요청 형식이 올바르지 않습니다.");
+  }
+
+  const roster = readRoster();
+  const person = assertAllowedPerson(userName, roster);
+  const now = getCurrentLocalParts();
+  const savedAt = new Date().toISOString();
+  const database = readPreparedDatabase(now, roster);
+  const previousRecord =
+    database.users[person.name] && typeof database.users[person.name] === "object" && !Array.isArray(database.users[person.name])
+      ? database.users[person.name]
+      : {
+          profile: { room: person.room },
+          phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+          phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+          phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+          outingActive: DEFAULT_OUTING_ACTIVE,
+          outingStartedAt: DEFAULT_OUTING_STARTED_AT,
+          intervals: [],
+          overnights: [],
+          updatedAt: null,
+        };
+  const days = Number(payload.days);
+  const shouldClear = Boolean(payload.clear) || days === 0;
+  let phoneConfiscation = DEFAULT_PHONE_CONFISCATION;
+
+  if (!shouldClear) {
+    if (!Number.isInteger(days) || days < 0 || days > 365) {
+      throwHttpError(400, "압수 기간은 0일부터 365일 사이로 입력해주세요.");
+    }
+
+    phoneConfiscation = {
+      days,
+      startedAt: savedAt,
+      createdAt: savedAt,
+    };
+  }
+
+  database.users[person.name] = {
+    ...previousRecord,
+    profile: { room: person.room },
+    phoneConfiscation,
+    updatedAt: savedAt,
+  };
+  writeDatabase(database);
+
+  return {
+    name: person.name,
+    phoneConfiscation: getPhoneConfiscationInfo(database.users[person.name], now),
   };
 }
 
@@ -824,6 +1553,14 @@ function buildMessagesResponse(session, searchParams) {
       role: session.role,
       senderName,
       messages: filtered,
+    };
+  }
+
+  if (session.role === "parent") {
+    return {
+      role: session.role,
+      senderName: "",
+      messages: [],
     };
   }
 
@@ -868,41 +1605,6 @@ function createWardenMessage(session, payload) {
   };
 }
 
-function toggleAttendanceForCurrentUser(session) {
-  if (!session || session.role !== "student") {
-    throwHttpError(403, "학생만 출석체크를 할 수 있습니다.");
-  }
-
-  const roster = readRoster();
-  const person = assertAllowedPerson(session.loginName, roster);
-  const now = getCurrentLocalParts();
-  const attendanceDocument = readPreparedAttendance(now, roster);
-  const attendanceDateKey = formatDateKey(now);
-  const nextDayRecord =
-    attendanceDocument.records?.[attendanceDateKey] &&
-    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
-    !Array.isArray(attendanceDocument.records[attendanceDateKey])
-      ? { ...attendanceDocument.records[attendanceDateKey] }
-      : {};
-
-  if (nextDayRecord[person.name]) {
-    delete nextDayRecord[person.name];
-  } else {
-    nextDayRecord[person.name] = true;
-  }
-
-  attendanceDocument.records = {
-    [attendanceDateKey]: nextDayRecord,
-  };
-  writeAttendance(attendanceDocument);
-
-  return {
-    name: person.name,
-    attendanceDateKey,
-    checked: Boolean(nextDayRecord[person.name]),
-  };
-}
-
 function changeOwnPassword(session, payload) {
   if (!session || !session.loginName) {
     throwHttpError(401, "로그인이 필요합니다.");
@@ -922,16 +1624,7 @@ function changeOwnPassword(session, payload) {
   }
 
   if (session.role === "warden") {
-    if (currentPassword !== authConfig.wardenPassword) {
-      throwHttpError(401, "현재 비밀번호가 올바르지 않습니다.");
-    }
-
-    authConfig.wardenPassword = nextPassword;
-    writeAuthConfig(authConfig);
-    return {
-      role: session.role,
-      loginName: session.loginName,
-    };
+    throwHttpError(403, "사감 모드에서는 비밀번호를 변경할 수 없습니다.");
   }
 
   const person = assertAllowedPerson(session.loginName, roster);
@@ -989,6 +1682,11 @@ function createStudent(payload) {
   const database = readDatabase();
   database.users[name] = {
     profile: { room },
+    phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+    phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+    phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+    outingActive: DEFAULT_OUTING_ACTIVE,
+    outingStartedAt: DEFAULT_OUTING_STARTED_AT,
     intervals: [],
     overnights: [],
     updatedAt: null,
@@ -1061,6 +1759,11 @@ function updateStudentProfile(userName, payload) {
       ? database.users[person.name]
       : {
           profile: { room: person.room },
+          phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+          phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+          phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+          outingActive: DEFAULT_OUTING_ACTIVE,
+          outingStartedAt: DEFAULT_OUTING_STARTED_AT,
           intervals: [],
           overnights: [],
           updatedAt: null,
@@ -1287,12 +1990,20 @@ function createEmptyDatabase(roster) {
           profile: {
             room: person.room,
           },
+          phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+          phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+          phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+          outingActive: DEFAULT_OUTING_ACTIVE,
+          outingStartedAt: DEFAULT_OUTING_STARTED_AT,
           intervals: [],
           overnights: [],
           updatedAt: null,
         },
       ]),
     ),
+    phoneLogs: [],
+    outingLogs: [],
+    overnightLogs: [],
   };
 }
 
@@ -1311,6 +2022,18 @@ function readPreparedDatabase(now, roster) {
   }
 
   if (pruneExpiredOvernights(database, now)) {
+    changed = true;
+  }
+
+  if (syncPhoneConfiscations(database, now)) {
+    changed = true;
+  }
+
+  if (syncPhoneTracking(database)) {
+    changed = true;
+  }
+
+  if (syncOutingTracking(database)) {
     changed = true;
   }
 
@@ -1364,6 +2087,7 @@ function readPreparedAttendance(now, roster) {
   );
 
   const normalized = {
+    modeActive: Boolean(raw.modeActive),
     records: {
       [attendanceDateKey]: normalizedTodayRecord,
     },
@@ -1376,12 +2100,470 @@ function readPreparedAttendance(now, roster) {
   return normalized;
 }
 
+function normalizePhoneSubmitted(value) {
+  if (value === true) {
+    return true;
+  }
+
+  if (value === false) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "submitted", "yes", "y", "o"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "taken", "no", "n", "x"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return DEFAULT_PHONE_SUBMITTED;
+}
+
+function normalizePhoneTakenAt(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_PHONE_TAKEN_AT;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || Number.isNaN(Date.parse(trimmed))) {
+    return DEFAULT_PHONE_TAKEN_AT;
+  }
+
+  return new Date(trimmed).toISOString();
+}
+
+function normalizePhoneConfiscation(value, now) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return DEFAULT_PHONE_CONFISCATION;
+  }
+
+  const todayKey = formatDateKey(now || getCurrentLocalParts());
+  const nowDate = new Date();
+  const rawDays = Number(value.days ?? value.daysRemaining);
+  const startedAt = normalizePhoneTakenAt(value.startedAt) || normalizePhoneTakenAt(value.createdAt);
+
+  if (Number.isInteger(rawDays)) {
+    return normalizePhoneConfiscationDays(rawDays, startedAt || nowDate.toISOString(), nowDate);
+  }
+
+  const untilDate = String(value.untilDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(untilDate) || untilDate < todayKey) {
+    return DEFAULT_PHONE_CONFISCATION;
+  }
+
+  const remainingDays = Math.max(1, getDateKeyDiffDays(todayKey, untilDate) + 1);
+  return normalizePhoneConfiscationDays(remainingDays, nowDate.toISOString(), nowDate);
+}
+
+function normalizePhoneConfiscationDays(days, startedAt, nowDate = new Date()) {
+  if (!Number.isInteger(days) || days <= 0 || days > 365) {
+    return DEFAULT_PHONE_CONFISCATION;
+  }
+
+  const normalizedStartedAt = normalizePhoneTakenAt(startedAt);
+  if (!normalizedStartedAt) {
+    return DEFAULT_PHONE_CONFISCATION;
+  }
+
+  const elapsedDays = getPhoneConfiscationElapsedDays(normalizedStartedAt, nowDate);
+  const remainingDays = days - elapsedDays;
+  if (remainingDays <= 0) {
+    return DEFAULT_PHONE_CONFISCATION;
+  }
+
+  const refreshedStartedAt =
+    elapsedDays > 0 ? new Date(Date.parse(normalizedStartedAt) + elapsedDays * DAY_MS).toISOString() : normalizedStartedAt;
+
+  return {
+    days: remainingDays,
+    startedAt: refreshedStartedAt,
+    createdAt: refreshedStartedAt,
+  };
+}
+
+function getPhoneConfiscationElapsedDays(startedAt, nowDate = new Date()) {
+  const startedAtMs = Date.parse(startedAt);
+  const nowMs = nowDate instanceof Date ? nowDate.getTime() : Date.now();
+  if (Number.isNaN(startedAtMs) || Number.isNaN(nowMs) || nowMs <= startedAtMs) {
+    return 0;
+  }
+
+  return Math.floor((nowMs - startedAtMs) / DAY_MS);
+}
+
+function getPhoneConfiscationAvailableAt(phoneConfiscation) {
+  const startedAt = normalizePhoneTakenAt(phoneConfiscation?.startedAt || phoneConfiscation?.createdAt);
+  const days = Number(phoneConfiscation?.days);
+  if (!startedAt || !Number.isInteger(days) || days <= 0) {
+    return null;
+  }
+
+  return new Date(Date.parse(startedAt) + days * DAY_MS).toISOString();
+}
+
+function formatLocalDateTimeLabel(isoDate) {
+  const normalizedDate = normalizePhoneTakenAt(isoDate);
+  if (!normalizedDate) {
+    return "";
+  }
+
+  const localParts = getLocalPartsForDate(new Date(normalizedDate));
+  return `${localParts.year}-${localParts.month}-${localParts.day} ${localParts.hour}:${localParts.minute}`;
+}
+
+function getDateKeyDiffDays(leftDateKey, rightDateKey) {
+  const [leftYear, leftMonth, leftDay] = String(leftDateKey || "").split("-").map(Number);
+  const [rightYear, rightMonth, rightDay] = String(rightDateKey || "").split("-").map(Number);
+  const leftDate = Date.UTC(leftYear, leftMonth - 1, leftDay);
+  const rightDate = Date.UTC(rightYear, rightMonth - 1, rightDay);
+  if (Number.isNaN(leftDate) || Number.isNaN(rightDate)) {
+    return 0;
+  }
+
+  return Math.round((rightDate - leftDate) / 86400000);
+}
+
+function getPhoneConfiscationInfo(record, now) {
+  const normalized = normalizePhoneConfiscation(record?.phoneConfiscation, now);
+  if (!normalized) {
+    return {
+      active: false,
+      untilDate: "",
+      availableDate: "",
+      availableAt: null,
+      availableLabel: "",
+      days: 0,
+      daysRemaining: 0,
+      startedAt: null,
+      createdAt: null,
+    };
+  }
+
+  const availableAt = getPhoneConfiscationAvailableAt(normalized);
+  const availableDate = availableAt ? formatDateKey(getLocalPartsForDate(new Date(availableAt))) : "";
+  const availableLabel = formatLocalDateTimeLabel(availableAt);
+  return {
+    active: true,
+    untilDate: availableDate,
+    availableDate,
+    availableAt,
+    availableLabel,
+    days: normalized.days,
+    daysRemaining: normalized.days,
+    startedAt: normalized.startedAt,
+    createdAt: normalized.createdAt,
+  };
+}
+
+function normalizePhoneLogs(logs) {
+  if (!Array.isArray(logs)) {
+    return [];
+  }
+
+  return logs
+    .map((log) => {
+      if (!log || typeof log !== "object" || Array.isArray(log)) {
+        return null;
+      }
+
+      const name = canonicalizeKnownPersonName(log.name || "");
+      const startAt = normalizePhoneTakenAt(log.startAt);
+      const endAt = normalizePhoneTakenAt(log.endAt);
+      if (!name || !startAt || !endAt) {
+        return null;
+      }
+
+      const durationSeconds = Math.max(0, Math.floor((Date.parse(endAt) - Date.parse(startAt)) / 1000));
+      return {
+        id: String(log.id || createPhoneLogId(name, startAt, endAt)),
+        name,
+        startAt,
+        endAt,
+        durationSeconds,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right.endAt) - Date.parse(left.endAt))
+    .slice(0, 200);
+}
+
+function createPhoneLog(name, startAt, endAt) {
+  const normalizedName = canonicalizeKnownPersonName(name || "");
+  const normalizedStartAt = normalizePhoneTakenAt(startAt);
+  const normalizedEndAt = normalizePhoneTakenAt(endAt);
+  const durationSeconds = Math.max(0, Math.floor((Date.parse(normalizedEndAt) - Date.parse(normalizedStartAt)) / 1000));
+
+  return {
+    id: createPhoneLogId(normalizedName, normalizedStartAt, normalizedEndAt),
+    name: normalizedName,
+    startAt: normalizedStartAt,
+    endAt: normalizedEndAt,
+    durationSeconds,
+  };
+}
+
+function createPhoneLogId(name, startAt, endAt) {
+  return crypto.createHash("sha1").update(`${name}|${startAt}|${endAt}`).digest("hex").slice(0, 16);
+}
+
+function resolvePhoneTakenAt(record, phoneSubmitted) {
+  if (phoneSubmitted || !record || typeof record !== "object" || Array.isArray(record)) {
+    return DEFAULT_PHONE_TAKEN_AT;
+  }
+
+  return normalizePhoneTakenAt(record.phoneTakenAt) || normalizePhoneTakenAt(record.updatedAt);
+}
+
+function normalizeOutingActive(value) {
+  if (value === true) {
+    return true;
+  }
+
+  if (value === false) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "outing", "out", "yes", "y", "o", "외출"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "returned", "in", "no", "n", "x", "재실"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return DEFAULT_OUTING_ACTIVE;
+}
+
+function normalizeOutingStartedAt(value) {
+  if (typeof value !== "string") {
+    return DEFAULT_OUTING_STARTED_AT;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || Number.isNaN(Date.parse(trimmed))) {
+    return DEFAULT_OUTING_STARTED_AT;
+  }
+
+  return new Date(trimmed).toISOString();
+}
+
+function normalizeOutingLogs(logs) {
+  if (!Array.isArray(logs)) {
+    return [];
+  }
+
+  return logs
+    .map((log) => {
+      if (!log || typeof log !== "object" || Array.isArray(log)) {
+        return null;
+      }
+
+      const name = canonicalizeKnownPersonName(log.name || "");
+      const startAt = normalizeOutingStartedAt(log.startAt);
+      const endAt = normalizeOutingStartedAt(log.endAt);
+      if (!name || !startAt || !endAt) {
+        return null;
+      }
+
+      const durationSeconds = Math.max(0, Math.floor((Date.parse(endAt) - Date.parse(startAt)) / 1000));
+      return {
+        id: String(log.id || createOutingLogId(name, startAt, endAt)),
+        name,
+        startAt,
+        endAt,
+        durationSeconds,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right.endAt) - Date.parse(left.endAt))
+    .slice(0, 200);
+}
+
+function createOutingLog(name, startAt, endAt) {
+  const normalizedName = canonicalizeKnownPersonName(name || "");
+  const normalizedStartAt = normalizeOutingStartedAt(startAt);
+  const normalizedEndAt = normalizeOutingStartedAt(endAt);
+  const durationSeconds = Math.max(0, Math.floor((Date.parse(normalizedEndAt) - Date.parse(normalizedStartAt)) / 1000));
+
+  return {
+    id: createOutingLogId(normalizedName, normalizedStartAt, normalizedEndAt),
+    name: normalizedName,
+    startAt: normalizedStartAt,
+    endAt: normalizedEndAt,
+    durationSeconds,
+  };
+}
+
+function createOutingLogId(name, startAt, endAt) {
+  return crypto.createHash("sha1").update(`outing|${name}|${startAt}|${endAt}`).digest("hex").slice(0, 16);
+}
+
+function normalizeOvernightLogAction(action) {
+  const normalized = String(action || "").trim().toUpperCase();
+  if (normalized === "SET" || normalized === "CANCEL") {
+    return normalized;
+  }
+
+  return "";
+}
+
+function normalizeOvernightLogDate(value) {
+  const targetDate = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(targetDate) ? targetDate : "";
+}
+
+function normalizeOvernightLogs(logs) {
+  if (!Array.isArray(logs)) {
+    return [];
+  }
+
+  return logs
+    .map((log) => {
+      if (!log || typeof log !== "object" || Array.isArray(log)) {
+        return null;
+      }
+
+      const name = canonicalizeKnownPersonName(log.name || "");
+      const targetDate = normalizeOvernightLogDate(log.targetDate);
+      const action = normalizeOvernightLogAction(log.action);
+      const createdAt = normalizePhoneTakenAt(log.createdAt);
+      if (!name || !targetDate || !action || !createdAt) {
+        return null;
+      }
+
+      return {
+        id: String(log.id || createOvernightLogId(name, targetDate, action, createdAt)),
+        name,
+        targetDate,
+        action,
+        createdAt,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .slice(0, 200);
+}
+
+function createOvernightLog(name, targetDate, action, createdAt) {
+  const normalizedName = canonicalizeKnownPersonName(name || "");
+  const normalizedTargetDate = normalizeOvernightLogDate(targetDate);
+  const normalizedAction = normalizeOvernightLogAction(action);
+  const normalizedCreatedAt = normalizePhoneTakenAt(createdAt) || new Date().toISOString();
+
+  return {
+    id: createOvernightLogId(normalizedName, normalizedTargetDate, normalizedAction, normalizedCreatedAt),
+    name: normalizedName,
+    targetDate: normalizedTargetDate,
+    action: normalizedAction,
+    createdAt: normalizedCreatedAt,
+  };
+}
+
+function createOvernightLogId(name, targetDate, action, createdAt) {
+  return crypto.createHash("sha1").update(`overnight|${name}|${targetDate}|${action}|${createdAt}`).digest("hex").slice(0, 16);
+}
+
+function resolveOutingStartedAt(record, outingActive) {
+  if (!outingActive || !record || typeof record !== "object" || Array.isArray(record)) {
+    return DEFAULT_OUTING_STARTED_AT;
+  }
+
+  return normalizeOutingStartedAt(record.outingStartedAt) || normalizeOutingStartedAt(record.updatedAt);
+}
+
 function readJsonFile(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, ""));
 }
 
 function writeJsonFile(filePath, data) {
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
+}
+
+function readParentApiRequestLog() {
+  return normalizeParentApiRequestLog(readLegacyJsonFile(PARENT_API_REQUEST_LOG_PATH, getDefaultParentApiRequestLog()));
+}
+
+function writeParentApiRequestLog(log) {
+  writeJsonFile(PARENT_API_REQUEST_LOG_PATH, normalizeParentApiRequestLog(log));
+}
+
+function normalizeParentApiRequestLog(raw) {
+  const requests = Array.isArray(raw?.requests) ? raw.requests : [];
+  return {
+    requests: requests.map(normalizeParentApiRequestEntry).filter(Boolean).slice(0, PARENT_API_REQUEST_LOG_LIMIT),
+  };
+}
+
+function normalizeParentApiRequestEntry(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+
+  return {
+    at: String(entry.at || ""),
+    ip: String(entry.ip || "unknown"),
+    method: String(entry.method || ""),
+    path: String(entry.path || ""),
+    query: String(entry.query || ""),
+    role: entry.role ? String(entry.role) : null,
+    loginName: String(entry.loginName || ""),
+    action: String(entry.action || ""),
+    result: String(entry.result || ""),
+    selectedName: String(entry.selectedName || ""),
+    dateCount: Number.isFinite(Number(entry.dateCount)) ? Number(entry.dateCount) : 0,
+  };
+}
+
+function logParentApiRequest(req, session, details = {}) {
+  try {
+    const requestUrl = new URL(req.url || "", "http://localhost");
+    const previousLog = readParentApiRequestLog();
+    const entry = normalizeParentApiRequestEntry({
+      at: new Date().toISOString(),
+      ip: getRequestIp(req),
+      method: req.method,
+      path: requestUrl.pathname,
+      query: requestUrl.searchParams.toString(),
+      role: session?.role || null,
+      loginName: session?.loginName || "",
+      ...details,
+    });
+
+    writeParentApiRequestLog({
+      requests: [entry, ...previousLog.requests].slice(0, PARENT_API_REQUEST_LOG_LIMIT),
+    });
+  } catch (error) {
+    console.error("Failed to write parent API debug log:", error.message);
+  }
+}
+
+function getRequestIp(req) {
+  const forwardedFor = getFirstHeaderValue(req.headers["x-forwarded-for"]);
+  const realIp = getFirstHeaderValue(req.headers["x-real-ip"]);
+  const rawIp = (forwardedFor || realIp || req.socket?.remoteAddress || "").split(",")[0].trim();
+  return normalizeRequestIp(rawIp);
+}
+
+function getFirstHeaderValue(value) {
+  if (Array.isArray(value)) {
+    return value[0] || "";
+  }
+
+  return String(value || "");
+}
+
+function normalizeRequestIp(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "unknown";
+  }
+
+  return text.startsWith("::ffff:") ? text.slice(7) : text;
 }
 
 function syncRosterProfiles(database, roster) {
@@ -1392,6 +2574,11 @@ function syncRosterProfiles(database, roster) {
     if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
       database.users[person.name] = {
         profile: { room: person.room },
+        phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
+        phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+        phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
+        outingActive: DEFAULT_OUTING_ACTIVE,
+        outingStartedAt: DEFAULT_OUTING_STARTED_AT,
         intervals: [],
         overnights: [],
         updatedAt: null,
@@ -1403,6 +2590,148 @@ function syncRosterProfiles(database, roster) {
     const nextProfile = { room: person.room };
     if (JSON.stringify(existing.profile || {}) !== JSON.stringify(nextProfile)) {
       existing.profile = nextProfile;
+      changed = true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(existing, "phoneSubmitted")) {
+      existing.phoneSubmitted = DEFAULT_PHONE_SUBMITTED;
+      changed = true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(existing, "phoneTakenAt")) {
+      existing.phoneTakenAt = DEFAULT_PHONE_TAKEN_AT;
+      changed = true;
+    } else {
+      const normalizedPhoneTakenAt = normalizePhoneTakenAt(existing.phoneTakenAt);
+      if (existing.phoneTakenAt !== normalizedPhoneTakenAt) {
+        existing.phoneTakenAt = normalizedPhoneTakenAt;
+        changed = true;
+      }
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(existing, "phoneConfiscation")) {
+      existing.phoneConfiscation = DEFAULT_PHONE_CONFISCATION;
+      changed = true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(existing, "outingActive")) {
+      existing.outingActive = DEFAULT_OUTING_ACTIVE;
+      changed = true;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(existing, "outingStartedAt")) {
+      existing.outingStartedAt = DEFAULT_OUTING_STARTED_AT;
+      changed = true;
+    } else {
+      const normalizedOutingStartedAt = normalizeOutingStartedAt(existing.outingStartedAt);
+      if (existing.outingStartedAt !== normalizedOutingStartedAt) {
+        existing.outingStartedAt = normalizedOutingStartedAt;
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+function syncPhoneConfiscations(database, now) {
+  let changed = false;
+
+  for (const userRecord of Object.values(database.users || {})) {
+    if (!userRecord || typeof userRecord !== "object" || Array.isArray(userRecord)) {
+      continue;
+    }
+
+    const normalized = normalizePhoneConfiscation(userRecord.phoneConfiscation, now);
+    if (JSON.stringify(userRecord.phoneConfiscation || null) !== JSON.stringify(normalized)) {
+      userRecord.phoneConfiscation = normalized;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function syncPhoneTracking(database) {
+  let changed = false;
+  const nowIso = new Date().toISOString();
+  const normalizedLogs = normalizePhoneLogs(database.phoneLogs);
+
+  if (JSON.stringify(database.phoneLogs || []) !== JSON.stringify(normalizedLogs)) {
+    database.phoneLogs = normalizedLogs;
+    changed = true;
+  }
+
+  for (const userRecord of Object.values(database.users || {})) {
+    if (!userRecord || typeof userRecord !== "object" || Array.isArray(userRecord)) {
+      continue;
+    }
+
+    const phoneSubmitted = normalizePhoneSubmitted(userRecord.phoneSubmitted);
+    if (userRecord.phoneSubmitted !== phoneSubmitted) {
+      userRecord.phoneSubmitted = phoneSubmitted;
+      changed = true;
+    }
+
+    const normalizedPhoneTakenAt = normalizePhoneTakenAt(userRecord.phoneTakenAt);
+    if (!phoneSubmitted && !normalizedPhoneTakenAt) {
+      userRecord.phoneSubmitted = DEFAULT_PHONE_SUBMITTED;
+      userRecord.phoneTakenAt = DEFAULT_PHONE_TAKEN_AT;
+      changed = true;
+      continue;
+    }
+
+    if (phoneSubmitted) {
+      if (userRecord.phoneTakenAt !== DEFAULT_PHONE_TAKEN_AT) {
+        userRecord.phoneTakenAt = DEFAULT_PHONE_TAKEN_AT;
+        changed = true;
+      }
+      continue;
+    }
+
+    const phoneTakenAt = normalizedPhoneTakenAt || nowIso;
+    if (userRecord.phoneTakenAt !== phoneTakenAt) {
+      userRecord.phoneTakenAt = phoneTakenAt;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function syncOutingTracking(database) {
+  let changed = false;
+  const nowIso = new Date().toISOString();
+  const normalizedLogs = normalizeOutingLogs(database.outingLogs);
+
+  if (JSON.stringify(database.outingLogs || []) !== JSON.stringify(normalizedLogs)) {
+    database.outingLogs = normalizedLogs;
+    changed = true;
+  }
+
+  for (const userRecord of Object.values(database.users || {})) {
+    if (!userRecord || typeof userRecord !== "object" || Array.isArray(userRecord)) {
+      continue;
+    }
+
+    const outingActive = normalizeOutingActive(userRecord.outingActive);
+    if (userRecord.outingActive !== outingActive) {
+      userRecord.outingActive = outingActive;
+      changed = true;
+    }
+
+    const normalizedOutingStartedAt = normalizeOutingStartedAt(userRecord.outingStartedAt);
+    if (!outingActive) {
+      if (userRecord.outingStartedAt !== DEFAULT_OUTING_STARTED_AT) {
+        userRecord.outingStartedAt = DEFAULT_OUTING_STARTED_AT;
+        changed = true;
+      }
+      continue;
+    }
+
+    const outingStartedAt = normalizedOutingStartedAt || nowIso;
+    if (userRecord.outingStartedAt !== outingStartedAt) {
+      userRecord.outingStartedAt = outingStartedAt;
       changed = true;
     }
   }
@@ -1672,6 +3001,29 @@ function computeStatus(intervals, overnights, now) {
   };
 }
 
+function resolveStatusWithManualOuting(status, outingActive, outingStartedAt) {
+  if (!outingActive || status?.isOvernight) {
+    return status;
+  }
+
+  return {
+    isOut: true,
+    isPhoneOnly: false,
+    isOvernight: false,
+    statusLabel: "외출",
+    currentInterval: {
+      day: "",
+      start: "",
+      end: "",
+      reason: "외출",
+      outing: "O",
+      phone: "X",
+      startedAt: outingStartedAt || null,
+    },
+    currentOvernight: null,
+  };
+}
+
 function resolveNextDateForWeekday(dayKey, now) {
   const currentDateKey = formatDateKey(now);
   const currentWeekdayIndex = WEEKDAY_INDEX_BY_INTL[now.weekday];
@@ -1687,6 +3039,35 @@ function resolveNextDateForWeekday(dayKey, now) {
   }
 
   return addDaysToDateKey(currentDateKey, delta);
+}
+
+function getCurrentSchoolWeekDays(now) {
+  const todayKey = formatDateKey(now);
+  const currentWeekdayIndex =
+    typeof WEEKDAY_INDEX_BY_INTL[now.weekday] === "number" ? WEEKDAY_INDEX_BY_INTL[now.weekday] : 0;
+  const mondayKey =
+    currentWeekdayIndex >= 5
+      ? addDaysToDateKey(todayKey, 7 - currentWeekdayIndex)
+      : addDaysToDateKey(todayKey, -currentWeekdayIndex);
+
+  return WEEKDAYS.map((day) => {
+    const targetDate = addDaysToDateKey(mondayKey, DAY_ORDER[day.key]);
+    return {
+      day: day.key,
+      label: day.label,
+      targetDate,
+      isToday: targetDate === todayKey,
+      isPast: targetDate < todayKey,
+    };
+  });
+}
+
+function getSelectedOvernightDates(overnights, weekDays, now) {
+  const weekDateSet = new Set(weekDays.map((day) => day.targetDate));
+  return sanitizeStoredOvernights(overnights, now)
+    .filter((overnight) => weekDateSet.has(overnight.targetDate))
+    .map((overnight) => overnight.targetDate)
+    .sort();
 }
 
 function addDaysToDateKey(dateKey, days) {
@@ -1847,7 +3228,7 @@ function assertIntervalsDoNotOverlap(intervals) {
   }
 }
 
-function getCurrentLocalParts() {
+function getLocalPartsForDate(date) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: TIME_ZONE,
     year: "numeric",
@@ -1858,7 +3239,7 @@ function getCurrentLocalParts() {
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(new Date());
+  }).formatToParts(date);
 
   return parts.reduce((accumulator, part) => {
     if (part.type !== "literal") {
@@ -1866,6 +3247,10 @@ function getCurrentLocalParts() {
     }
     return accumulator;
   }, {});
+}
+
+function getCurrentLocalParts() {
+  return getLocalPartsForDate(new Date());
 }
 
 function formatDateKey(now) {
@@ -1928,11 +3313,98 @@ function throwHttpError(statusCode, message) {
   throw newHttpError(statusCode, message);
 }
 
-function toggleAttendanceForCurrentUser(session) {
-  if (!session || session.role !== "student") {
-    throwHttpError(403, "학생만 출석 체크를 할 수 있습니다.");
+function isAttendanceExcludedPerson(person, now, roster = readRoster()) {
+  const database = readPreparedDatabase(now, roster);
+  const userRecord = database.users[person.name];
+  const status = resolveStatusWithManualOuting(
+    computeStatus(
+      sanitizeIntervals(userRecord?.intervals || []),
+      sanitizeStoredOvernights(userRecord?.overnights || [], now),
+      now,
+    ),
+    normalizeOutingActive(userRecord?.outingActive),
+    resolveOutingStartedAt(userRecord, normalizeOutingActive(userRecord?.outingActive)),
+  );
+
+  return Boolean(status.isOut || status.isOvernight);
+}
+
+function toggleAttendanceForCurrentUser(session, payload = {}) {
+  if (!session || !session.role) {
+    throwHttpError(401, "로그인이 필요합니다.");
   }
 
-  throwHttpError(410, "출석 체크는 프론트엔드에서만 처리됩니다. 페이지를 새로고침해주세요.");
+  if (session.role !== "warden" && session.role !== "student") {
+    throwHttpError(403, "출석 체크 권한이 없습니다.");
+  }
+
+  const roster = readRoster();
+  const targetName =
+    session.role === "warden"
+      ? canonicalizeKnownPersonName(payload?.name || "")
+      : canonicalizeKnownPersonName(session.loginName || "");
+  const person = assertAllowedPerson(targetName, roster);
+  const now = getCurrentLocalParts();
+  const attendanceDocument = readPreparedAttendance(now, roster);
+
+  if (session.role === "student" && person.name !== session.loginName) {
+    throwHttpError(403, "본인 출석만 체크할 수 있습니다.");
+  }
+
+  if (session.role === "student" && !attendanceDocument.modeActive) {
+    throwHttpError(403, "현재 출석모드가 아닙니다.");
+  }
+
+  if (isAttendanceExcludedPerson(person, now, roster)) {
+    throwHttpError(403, "외출 또는 외박 중인 학생은 출석 체크 대상에서 제외됩니다.");
+  }
+
+  const attendanceDateKey = formatDateKey(now);
+  const nextDayRecord =
+    attendanceDocument.records?.[attendanceDateKey] &&
+    typeof attendanceDocument.records[attendanceDateKey] === "object" &&
+    !Array.isArray(attendanceDocument.records[attendanceDateKey])
+      ? { ...attendanceDocument.records[attendanceDateKey] }
+      : {};
+
+  const nextChecked = session.role === "student" ? true : !nextDayRecord[person.name];
+  if (nextChecked) {
+    nextDayRecord[person.name] = true;
+  } else {
+    delete nextDayRecord[person.name];
+  }
+
+  attendanceDocument.records = {
+    [attendanceDateKey]: nextDayRecord,
+  };
+  writeAttendance(attendanceDocument);
+
+  return {
+    name: person.name,
+    attendanceDateKey,
+    modeActive: Boolean(attendanceDocument.modeActive),
+    checked: Boolean(nextDayRecord[person.name]),
+  };
+}
+
+function resetAttendanceForToday(session) {
+  if (!session || session.role !== "warden") {
+    throwHttpError(403, "사감 모드에서만 출석을 초기화할 수 있습니다.");
+  }
+
+  const roster = readRoster();
+  const now = getCurrentLocalParts();
+  const attendanceDocument = readPreparedAttendance(now, roster);
+  const attendanceDateKey = formatDateKey(now);
+  attendanceDocument.records = {
+    [attendanceDateKey]: {},
+  };
+  writeAttendance(attendanceDocument);
+
+  return {
+    attendanceDateKey,
+    modeActive: Boolean(attendanceDocument.modeActive),
+    reset: true,
+  };
 }
 

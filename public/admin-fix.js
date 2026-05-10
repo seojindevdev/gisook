@@ -3,9 +3,13 @@ const adminFixState = {
   searchQuery: "",
   gradeFilter: "",
   roomFilter: "",
+  dashboardUsers: [],
+  dashboardLoading: false,
+  dashboardLoaded: false,
 };
 
 const adminProfileSaveTimers = new Map();
+const adminConfiscationSaveTimers = new Map();
 
 function normalizeAdminFixRoom(room) {
   const normalizedRoom = String(room || "").trim();
@@ -40,6 +44,7 @@ function ensureAdminFilters() {
   elements.adminGradeFilterInput = document.querySelector("#adminGradeFilterInput");
   elements.adminRoomFilterInput = document.querySelector("#adminRoomFilterInput");
   elements.adminStudentRows = document.querySelector("#adminStudentRows");
+  ensureAdminTableHeader();
 
   if (elements.adminSearchInput && elements.adminSearchInput.dataset.adminFilterBound !== "true") {
     elements.adminSearchInput.addEventListener("input", handleAdminFilterChange);
@@ -80,6 +85,22 @@ function ensureAdminFilters() {
   }
 }
 
+function ensureAdminTableHeader() {
+  const headerRow = document.querySelector("#adminTab table thead tr");
+  if (!headerRow || headerRow.dataset.adminToneApplied === "true") {
+    return;
+  }
+
+  headerRow.dataset.adminToneApplied = "true";
+  headerRow.innerHTML = `
+    <th>이름</th>
+    <th>호실</th>
+    <th>학년</th>
+    <th>핸드폰 압수</th>
+    <th>관리</th>
+  `;
+}
+
 function normalizeAdminSearchQuery(value) {
   return String(value || "").trim().toLocaleLowerCase("ko-KR");
 }
@@ -111,6 +132,234 @@ function matchesAdminRoomFilter(room) {
   }
 
   return String(room || "").trim() === adminFixState.roomFilter;
+}
+
+function normalizeAdminPhoneConfiscation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !value.active) {
+    return {
+      active: false,
+      availableDate: "",
+      availableAt: null,
+      availableLabel: "",
+      days: 0,
+      daysRemaining: 0,
+    };
+  }
+
+  const daysRemaining = Math.max(0, Number(value.daysRemaining ?? value.days ?? 0));
+  const availableLabel = normalizeAdminDateTimeLabel(value.availableLabel || value.availableAt || value.availableDate || value.untilDate || "");
+  return {
+    active: daysRemaining > 0,
+    availableDate: String(value.availableDate || value.untilDate || ""),
+    availableAt: typeof value.availableAt === "string" ? value.availableAt : null,
+    availableLabel,
+    days: Math.max(0, Number(value.days || daysRemaining)),
+    daysRemaining,
+  };
+}
+
+function getAdminDashboardUser(name) {
+  const targetName = String(name || "").trim();
+  return adminFixState.dashboardUsers.find((user) => user && user.name === targetName) || null;
+}
+
+function getAdminPhoneConfiscation(name) {
+  return normalizeAdminPhoneConfiscation(getAdminDashboardUser(name)?.phoneConfiscation);
+}
+
+function renderAdminConfiscationStatus(name) {
+  const phoneConfiscation = getAdminPhoneConfiscation(name);
+  if (!phoneConfiscation.active) {
+    return "";
+  }
+
+  return `
+    <span class="admin-confiscation-badge is-active">압수 중</span>
+    <span class="admin-confiscation-detail">${phoneConfiscation.daysRemaining}일 남음</span>
+  `;
+}
+
+function getAdminConfiscationInputValue(name) {
+  const phoneConfiscation = getAdminPhoneConfiscation(name);
+  return phoneConfiscation.active ? phoneConfiscation.daysRemaining : 0;
+}
+
+function formatAdminDateTime(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  if (!values.year || !values.month || !values.day || !values.hour || !values.minute) {
+    return "";
+  }
+
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
+}
+
+function normalizeAdminDateTimeLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(text)) {
+    return text;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return `${text} 00:00`;
+  }
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    return text;
+  }
+
+  return formatAdminDateTime(date);
+}
+
+function getAdminConfiscationEndLabel(days) {
+  const normalizedDays = Number(days);
+  if (!Number.isInteger(normalizedDays) || normalizedDays <= 0) {
+    return "";
+  }
+
+  return formatAdminDateTime(new Date(Date.now() + normalizedDays * 24 * 60 * 60 * 1000));
+}
+
+function renderAdminConfiscationEndPreview(days) {
+  const endLabel = getAdminConfiscationEndLabel(days);
+  return endLabel ? `${escapeHtml(endLabel)} 종료` : "";
+}
+
+function renderAdminConfiscationEndPreviewForName(name, days) {
+  const phoneConfiscation = getAdminPhoneConfiscation(name);
+  const normalizedDays = Number(days);
+  if (
+    phoneConfiscation.active &&
+    phoneConfiscation.availableLabel &&
+    normalizedDays === phoneConfiscation.daysRemaining
+  ) {
+    return `${escapeHtml(phoneConfiscation.availableLabel)} 종료`;
+  }
+
+  return renderAdminConfiscationEndPreview(days);
+}
+
+function updateAdminConfiscationEndPreview(row) {
+  const input = row?.querySelector("[data-admin-confiscation-days]");
+  const preview = row?.querySelector("[data-admin-confiscation-preview]");
+  if (!input || !preview) {
+    return;
+  }
+
+  const previewText = renderAdminConfiscationEndPreview(Number(input.value || 0));
+  preview.innerHTML = previewText;
+  preview.classList.toggle("hidden", !previewText);
+}
+
+function readAdminConfiscationDays(row) {
+  const input = row?.querySelector("[data-admin-confiscation-days]");
+  const rawValue = String(input?.value ?? "").trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  const days = Number(rawValue);
+  return Number.isInteger(days) ? days : null;
+}
+
+function upsertAdminDashboardPhoneConfiscation(name, phoneConfiscation) {
+  const targetName = String(name || "").trim();
+  if (!targetName) {
+    return;
+  }
+
+  const existingUser = getAdminDashboardUser(targetName);
+  if (existingUser) {
+    existingUser.phoneConfiscation = phoneConfiscation;
+    return;
+  }
+
+  adminFixState.dashboardUsers.push({
+    name: targetName,
+    phoneConfiscation,
+  });
+}
+
+function updateAdminConfiscationRow(row, name) {
+  const input = row?.querySelector("[data-admin-confiscation-days]");
+  const preview = row?.querySelector("[data-admin-confiscation-preview]");
+  if (input && preview) {
+    const previewText = renderAdminConfiscationEndPreviewForName(name, Number(input.value || 0));
+    preview.innerHTML = previewText;
+    preview.classList.toggle("hidden", !previewText);
+  }
+}
+
+function clearQueuedAdminConfiscationSave(name) {
+  const targetName = String(name || "").trim();
+  const timerId = adminConfiscationSaveTimers.get(targetName);
+  if (!timerId) {
+    return;
+  }
+
+  window.clearTimeout(timerId);
+  adminConfiscationSaveTimers.delete(targetName);
+}
+
+function queueAdminConfiscationSave(row) {
+  const name = String(row?.dataset.adminName || "").trim();
+  const days = readAdminConfiscationDays(row);
+  if (!name || days === null) {
+    return;
+  }
+
+  clearQueuedAdminConfiscationSave(name);
+  const timerId = window.setTimeout(() => {
+    adminConfiscationSaveTimers.delete(name);
+    saveAdminPhoneConfiscation(name, false, { silent: true });
+  }, 500);
+  adminConfiscationSaveTimers.set(name, timerId);
+}
+
+function flushAdminConfiscationSave(row) {
+  const name = String(row?.dataset.adminName || "").trim();
+  const days = readAdminConfiscationDays(row);
+  if (!name || days === null) {
+    return;
+  }
+
+  clearQueuedAdminConfiscationSave(name);
+  saveAdminPhoneConfiscation(name, false, { silent: true });
+}
+
+async function requestAdminDashboardSnapshot(force = false) {
+  if (state.userRole !== "warden" || !state.authenticated || adminFixState.dashboardLoading) {
+    return;
+  }
+
+  if (!force && adminFixState.dashboardLoaded) {
+    return;
+  }
+
+  adminFixState.dashboardLoading = true;
+  try {
+    const payload = await fetchJson("/api/dashboard");
+    adminFixState.dashboardUsers = Array.isArray(payload.users) ? payload.users : [];
+    adminFixState.dashboardLoaded = true;
+    renderAdminStudentRows();
+  } catch (error) {
+    adminFixState.dashboardLoaded = false;
+  } finally {
+    adminFixState.dashboardLoading = false;
+  }
 }
 
 function handleAdminFilterChange() {
@@ -172,6 +421,7 @@ function renderAdminDraftStudentRow(draft) {
           ${buildAdminGradeOptions(Number(draft.grade || 1))}
         </select>
       </td>
+      <td><span class="admin-confiscation-muted">추가 후 설정</span></td>
       <td>
         <div class="admin-cell-actions">
           <button type="button" data-admin-draft-save="${escapeHtml(draft.id)}">저장</button>
@@ -187,6 +437,7 @@ function renderAdminStudentRows() {
   if (!elements.adminStudentRows) {
     return;
   }
+  requestAdminDashboardSnapshot();
 
   const people = [...state.people]
     .filter((person) => matchesAdminSearchQuery(person.name))
@@ -204,8 +455,13 @@ function renderAdminStudentRows() {
 
   const rows = [
     ...adminFixState.draftStudents.map(renderAdminDraftStudentRow),
-    ...people.map(
-      (person) => `
+    ...people.map((person) => {
+      const confiscationDays = getAdminConfiscationInputValue(person.name);
+      const confiscationEndPreview = renderAdminConfiscationEndPreviewForName(person.name, confiscationDays);
+      const confiscationEndPreviewClass = confiscationEndPreview
+        ? "admin-confiscation-end-preview"
+        : "admin-confiscation-end-preview hidden";
+      return `
         <tr data-admin-name="${escapeHtml(person.name)}">
           <td>
             <input
@@ -230,15 +486,15 @@ function renderAdminStudentRows() {
           </td>
           <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
         </tr>
-      `,
-    ),
+      `;
+    }),
   ];
 
   if (rows.length === 0) {
     const emptyMessage = hasActiveAdminFilters() ? "조건에 맞는 학생이 없습니다." : "학생 데이터가 없습니다.";
     elements.adminStudentRows.innerHTML = `
       <tr>
-        <td colspan="4" class="empty-row">${escapeHtml(emptyMessage)}</td>
+        <td colspan="5" class="empty-row">${escapeHtml(emptyMessage)}</td>
       </tr>
     `;
     return;
@@ -277,6 +533,24 @@ function handleAdminStudentAction(event) {
     const draftId = String(draftCancelButton.dataset.adminDraftCancel || "").trim();
     if (draftId) {
       cancelDraftStudentById(draftId);
+    }
+    return;
+  }
+
+  const confiscationSaveButton = event.target.closest("[data-admin-confiscation-save]");
+  if (confiscationSaveButton) {
+    const name = String(confiscationSaveButton.dataset.adminConfiscationSave || "").trim();
+    if (name) {
+      saveAdminPhoneConfiscation(name, false);
+    }
+    return;
+  }
+
+  const confiscationClearButton = event.target.closest("[data-admin-confiscation-clear]");
+  if (confiscationClearButton) {
+    const name = String(confiscationClearButton.dataset.adminConfiscationClear || "").trim();
+    if (name) {
+      saveAdminPhoneConfiscation(name, true);
     }
     return;
   }
@@ -403,6 +677,7 @@ function renderAdminStudentRows() {
   if (!elements.adminStudentRows) {
     return;
   }
+  requestAdminDashboardSnapshot();
 
   const people = [...state.people]
     .filter((person) => matchesAdminSearchQuery(person.name))
@@ -420,8 +695,13 @@ function renderAdminStudentRows() {
 
   const rows = [
     ...adminFixState.draftStudents.map(renderAdminDraftStudentRow),
-    ...people.map(
-      (person) => `
+    ...people.map((person) => {
+      const confiscationDays = getAdminConfiscationInputValue(person.name);
+      const confiscationEndPreview = renderAdminConfiscationEndPreviewForName(person.name, confiscationDays);
+      const confiscationEndPreviewClass = confiscationEndPreview
+        ? "admin-confiscation-end-preview"
+        : "admin-confiscation-end-preview hidden";
+      return `
         <tr data-admin-name="${escapeHtml(person.name)}">
           <td>
             <input
@@ -445,18 +725,40 @@ function renderAdminStudentRows() {
             </select>
           </td>
           <td>
+            <div class="admin-confiscation-control">
+              <div class="admin-confiscation-actions">
+                <div class="admin-confiscation-duration-wrap">
+                  <label class="admin-confiscation-days-field">
+                    <input
+                      type="number"
+                      class="text-input admin-confiscation-days-input"
+                      data-admin-confiscation-days="${escapeHtml(person.name)}"
+                      min="0"
+                      max="365"
+                      step="1"
+                      value="${confiscationDays}"
+                      aria-label="${escapeHtml(person.name)} 핸드폰 압수 기간"
+                    />
+                    <span class="admin-confiscation-days-unit">일</span>
+                  </label>
+                  <span class="${confiscationEndPreviewClass}" data-admin-confiscation-preview>${confiscationEndPreview}</span>
+                </div>
+              </div>
+            </div>
+          </td>
+          <td>
             <button type="button" class="admin-delete-button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
           </td>
         </tr>
-      `,
-    ),
+      `;
+    }),
   ];
 
   if (rows.length === 0) {
     const emptyMessage = hasActiveAdminFilters() ? "조건에 맞는 학생이 없습니다." : "학생 데이터가 없습니다.";
     elements.adminStudentRows.innerHTML = `
       <tr>
-        <td colspan="4" class="empty-row">${escapeHtml(emptyMessage)}</td>
+        <td colspan="5" class="empty-row">${escapeHtml(emptyMessage)}</td>
       </tr>
     `;
     return;
@@ -484,6 +786,24 @@ function handleAdminStudentAction(event) {
     return;
   }
 
+  const confiscationSaveButton = event.target.closest("[data-admin-confiscation-save]");
+  if (confiscationSaveButton) {
+    const name = String(confiscationSaveButton.dataset.adminConfiscationSave || "").trim();
+    if (name) {
+      saveAdminPhoneConfiscation(name, false);
+    }
+    return;
+  }
+
+  const confiscationClearButton = event.target.closest("[data-admin-confiscation-clear]");
+  if (confiscationClearButton) {
+    const name = String(confiscationClearButton.dataset.adminConfiscationClear || "").trim();
+    if (name) {
+      saveAdminPhoneConfiscation(name, true);
+    }
+    return;
+  }
+
   const deleteButton = event.target.closest("[data-admin-delete]");
   if (!deleteButton) {
     return;
@@ -499,6 +819,51 @@ function handleAdminStudentAction(event) {
   }
 
   deleteStudentByName(name);
+}
+
+async function saveAdminPhoneConfiscation(name, clear = false, options = {}) {
+  const { silent = false } = options;
+  if (state.userRole !== "warden" || !state.authenticated) {
+    setMessage("사감 모드에서만 사용할 수 있습니다.", true);
+    return;
+  }
+
+  const targetName = String(name || "").trim();
+  const row = elements.adminStudentRows?.querySelector(`tr[data-admin-name="${CSS.escape(targetName)}"]`);
+  const input = row?.querySelector("[data-admin-confiscation-days]");
+  if (!clear && !input) {
+    return;
+  }
+
+  const days = clear ? 0 : Number(input?.value || 0);
+  if (!targetName) {
+    return;
+  }
+
+  if (!clear && (!Number.isInteger(days) || days < 0 || days > 365)) {
+    setMessage("압수 기간은 0일부터 365일 사이로 입력해주세요.", true);
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(`/api/admin/phone-confiscations/${encodeURIComponent(targetName)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(clear || days === 0 ? { clear: true, days: 0 } : { days }),
+    });
+    upsertAdminDashboardPhoneConfiscation(payload.name || targetName, payload.phoneConfiscation);
+    updateAdminConfiscationRow(row, payload.name || targetName);
+    if (typeof refreshDashboard === "function") {
+      await refreshDashboard();
+    }
+    if (!silent) {
+      setMessage(clear || days === 0 ? "핸드폰 압수를 해제했습니다." : "핸드폰 압수 기간을 설정했습니다.");
+    }
+  } catch (error) {
+    setMessage(error.message, true);
+  }
 }
 
 function getAdminRowProfileValues(row) {
@@ -551,6 +916,13 @@ function handleAdminStudentFieldInput(event) {
     return;
   }
 
+  if (event.target.closest("[data-admin-confiscation-days]")) {
+    const row = event.target.closest("tr[data-admin-name]");
+    updateAdminConfiscationEndPreview(row);
+    queueAdminConfiscationSave(row);
+    return;
+  }
+
   if (!event.target.closest("[data-admin-name-input]")) {
     return;
   }
@@ -575,6 +947,12 @@ function handleAdminStudentFieldChange(event) {
     return;
   }
 
+  if (event.target.closest("[data-admin-confiscation-days]")) {
+    updateAdminConfiscationEndPreview(row);
+    flushAdminConfiscationSave(row);
+    return;
+  }
+
   if (
     event.target.closest("[data-admin-room-input]") ||
     event.target.closest("[data-admin-grade-input]") ||
@@ -585,6 +963,11 @@ function handleAdminStudentFieldChange(event) {
 }
 
 function handleAdminStudentFieldBlur(event) {
+  if (event.target.closest("[data-admin-confiscation-days]")) {
+    flushAdminConfiscationSave(event.target.closest("tr[data-admin-name]"));
+    return;
+  }
+
   if (!event.target.closest("[data-admin-name-input]")) {
     return;
   }
@@ -598,6 +981,14 @@ function handleAdminStudentFieldBlur(event) {
 }
 
 function handleAdminStudentFieldKeydown(event) {
+  if (event.key === "Enter" && event.target.closest("[data-admin-confiscation-days]")) {
+    event.preventDefault();
+    const row = event.target.closest("tr[data-admin-name]");
+    flushAdminConfiscationSave(row);
+    event.target.blur();
+    return;
+  }
+
   if (event.key !== "Enter" || !event.target.closest("[data-admin-name-input]")) {
     return;
   }

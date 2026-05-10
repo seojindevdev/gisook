@@ -56,6 +56,8 @@ const WEEKDAYS = [
   { key: "WED", label: "수", intl: "Wed" },
   { key: "THU", label: "목", intl: "Thu" },
   { key: "FRI", label: "금", intl: "Fri" },
+  { key: "SAT", label: "토", intl: "Sat" },
+  { key: "SUN", label: "일", intl: "Sun" },
 ];
 
 const DAY_ORDER = Object.fromEntries(WEEKDAYS.map((day, index) => [day.key, index]));
@@ -75,12 +77,15 @@ const WEEKDAY_INDEX_BY_KEY = {
   WED: 2,
   THU: 3,
   FRI: 4,
+  SAT: 5,
+  SUN: 6,
 };
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
 };
@@ -3045,13 +3050,20 @@ function getCurrentSchoolWeekDays(now) {
   const todayKey = formatDateKey(now);
   const currentWeekdayIndex =
     typeof WEEKDAY_INDEX_BY_INTL[now.weekday] === "number" ? WEEKDAY_INDEX_BY_INTL[now.weekday] : 0;
-  const mondayKey =
-    currentWeekdayIndex >= 5
-      ? addDaysToDateKey(todayKey, 7 - currentWeekdayIndex)
-      : addDaysToDateKey(todayKey, -currentWeekdayIndex);
+  const mondayKey = addDaysToDateKey(todayKey, -currentWeekdayIndex);
+  const currentSundayKey = addDaysToDateKey(mondayKey, DAY_ORDER.SUN);
+  const nextWeekMondayKey = addDaysToDateKey(currentSundayKey, 1);
+  const overnightDays = [
+    { key: "SUN", label: "일", targetDate: currentSundayKey },
+    ...WEEKDAYS.filter((day) => ["MON", "TUE", "WED", "THU"].includes(day.key)).map((day) => ({
+      key: day.key,
+      label: day.label,
+      targetDate: addDaysToDateKey(nextWeekMondayKey, DAY_ORDER[day.key]),
+    })),
+  ];
 
-  return WEEKDAYS.map((day) => {
-    const targetDate = addDaysToDateKey(mondayKey, DAY_ORDER[day.key]);
+  return overnightDays.map((day) => {
+    const targetDate = day.targetDate;
     return {
       day: day.key,
       label: day.label,

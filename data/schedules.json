@@ -478,7 +478,7 @@
       "outingStartedAt": null,
       "intervals": [],
       "overnights": [],
-      "updatedAt": "2026-05-10T07:47:31.033Z"
+      "updatedAt": "2026-05-10T12:48:27.256Z"
     },
     "강선우 1": {
       "profile": {
@@ -1122,5 +1122,62 @@
       "durationSeconds": 1
     }
   ],
-  "overnightLogs": []
+  "overnightLogs": [
+    {
+      "id": "982c3b409eda60e0",
+      "name": "김서진",
+      "targetDate": "2026-05-10",
+      "action": "CANCEL",
+      "createdAt": "2026-05-10T12:48:27.255Z"
+    },
+    {
+      "id": "9a1dc9505f7642c7",
+      "name": "김서진",
+      "targetDate": "2026-05-10",
+      "action": "SET",
+      "createdAt": "2026-05-10T12:48:25.093Z"
+    },
+    {
+      "id": "a648a01d2f980d2c",
+      "name": "김서진",
+      "targetDate": "2026-05-10",
+      "action": "CANCEL",
+      "createdAt": "2026-05-10T12:48:21.469Z"
+    },
+    {
+      "id": "4fd0fbed55c1bfc7",
+      "name": "김서진",
+      "targetDate": "2026-05-11",
+      "action": "CANCEL",
+      "createdAt": "2026-05-10T12:48:21.036Z"
+    },
+    {
+      "id": "d6566da684158e22",
+      "name": "김서진",
+      "targetDate": "2026-05-12",
+      "action": "CANCEL",
+      "createdAt": "2026-05-10T12:48:20.539Z"
+    },
+    {
+      "id": "2e2897742f746a19",
+      "name": "김서진",
+      "targetDate": "2026-05-12",
+      "action": "SET",
+      "createdAt": "2026-05-10T12:48:20.024Z"
+    },
+    {
+      "id": "a0824b8079a32551",
+      "name": "김서진",
+      "targetDate": "2026-05-11",
+      "action": "SET",
+      "createdAt": "2026-05-10T12:48:19.446Z"
+    },
+    {
+      "id": "cfd0abd11325b97e",
+      "name": "김서진",
+      "targetDate": "2026-05-10",
+      "action": "SET",
+      "createdAt": "2026-05-10T12:48:19.025Z"
+    }
+  ]
 }

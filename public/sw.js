@@ -1,8 +1,8 @@
-const CACHE_NAME = "gisook-pwa-v1";
+const CACHE_NAME = "gisook-pwa-v7";
 const APP_SHELL_URLS = [
   "/",
   "/index.html",
-  "/styles.css",
+  "/styles.css?v=7",
   "/app.js",
   "/attendance-mode.js",
   "/admin-fix.js",

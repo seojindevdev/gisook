@@ -11,10 +11,18 @@ select {
   font: inherit;
 }
 
+.app-shell,
+.app-shell *,
+.app-shell *::before,
+.app-shell *::after {
+  box-sizing: border-box;
+}
+
 .app-shell {
   max-width: 1100px;
   margin: 0 auto;
   padding: 16px;
+  overflow-x: hidden;
 }
 
 .auth-gate {
@@ -593,11 +601,20 @@ option.blocked-option {
 }
 
 .phone-log-panel {
+  max-width: 100%;
   margin-bottom: 16px;
   padding: 20px;
   border: 1px solid #cbd5e1;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
+  overflow-x: hidden;
+}
+
+.phone-log-panel,
+.phone-log-panel *,
+.phone-log-panel *::before,
+.phone-log-panel *::after {
+  box-sizing: border-box;
 }
 
 .phone-log-header {
@@ -630,9 +647,23 @@ option.blocked-option {
 
 .history-log-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #0f172a;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.history-log-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.history-log-tabs > * {
+  flex: 0 0 auto;
 }
 
 .history-log-tab-button {
@@ -644,6 +675,7 @@ option.blocked-option {
   cursor: pointer;
   font: inherit;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .history-log-tab-button:hover {
@@ -729,6 +761,7 @@ option.blocked-option {
 .phone-log-rows {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .phone-log-empty {
@@ -744,6 +777,8 @@ option.blocked-option {
   gap: 14px;
   align-items: center;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
   border: 1px solid #dbe3ee;
   background: #ffffff;
@@ -765,6 +800,7 @@ option.blocked-option {
 }
 
 .phone-log-name {
+  min-width: 0;
   color: #0f172a;
   font-size: 18px;
   overflow: hidden;
@@ -793,6 +829,7 @@ option.blocked-option {
   color: #475569;
   font-size: 14px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .phone-log-duration {
@@ -1276,6 +1313,10 @@ option.blocked-option {
 }
 
 @media (max-width: 720px) {
+  .phone-log-panel {
+    padding: 12px;
+  }
+
   .phone-log-header,
   .phone-log-controls,
   .phone-log-card,
@@ -1327,6 +1368,36 @@ option.blocked-option {
 }
 
 @media (max-width: 760px) {
+  .tabs {
+    margin-bottom: 0;
+    padding-bottom: 12px;
+  }
+
+  .dashboard-filters {
+    flex-wrap: nowrap;
+    align-items: center;
+    margin: 0 0 12px;
+    padding: 12px 0 10px;
+    border-top: 3px solid #0f172a;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dashboard-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dashboard-filters > * {
+    flex: 0 0 auto;
+  }
+
+  .dashboard-filter-button,
+  .dashboard-mode-toggle {
+    white-space: nowrap;
+  }
+
   .dashboard-utility-panel,
   .dashboard-status-summary {
     grid-template-columns: 1fr;
@@ -1761,6 +1832,8 @@ option.blocked-option {
 }
 
 #adminTab .table-wrap {
+  width: 100%;
+  max-width: 100%;
   border: 1px solid #dbe3ee;
   background: #ffffff;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
@@ -1934,6 +2007,13 @@ option.blocked-option {
   font-weight: 900;
 }
 
+#adminTab input,
+#adminTab select,
+#adminTab button {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
 #adminTab .admin-confiscation-save-button {
   border-color: #111827;
   background: #111827;
@@ -1966,9 +2046,10 @@ option.blocked-option {
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1024px) {
   #adminTab {
     padding: 14px;
+    overflow-x: hidden;
   }
 
   #adminTab .actions {
@@ -1976,8 +2057,137 @@ option.blocked-option {
     grid-template-columns: 1fr;
   }
 
+  #adminTab .actions button,
+  #adminTab .actions input,
+  #adminTab .actions select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #adminTab .table-wrap {
+    overflow-x: hidden;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
   #adminTab table {
-    min-width: 920px;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+  }
+
+  #adminTab thead {
+    display: none;
+  }
+
+  #adminTab tbody {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  #adminTab tr[data-admin-draft-id],
+  #adminTab tr[data-admin-name] {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid #dbe3ee;
+    background: #ffffff;
+  }
+
+  #adminTab th,
+  #adminTab td {
+    display: block;
+    width: 100% !important;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  #adminTab td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  #adminTab td:nth-child(1)::before {
+    content: "이름";
+  }
+
+  #adminTab td:nth-child(2)::before {
+    content: "호실";
+  }
+
+  #adminTab td:nth-child(3)::before {
+    content: "학년";
+  }
+
+  #adminTab td:nth-child(4)::before {
+    content: "핸드폰 압수";
+  }
+
+  #adminTab td:nth-child(5)::before {
+    content: "관리";
+  }
+
+  #adminTab .empty-row::before {
+    content: none;
+  }
+
+  #adminTab tr[data-admin-draft-id] .text-input,
+  #adminTab tr[data-admin-draft-id] select,
+  #adminTab tr[data-admin-draft-id] button,
+  #adminTab tr[data-admin-name] .text-input,
+  #adminTab tr[data-admin-name] select,
+  #adminTab tr[data-admin-name] button {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  #adminTab .admin-cell-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    width: 100%;
+  }
+
+  #adminTab .admin-confiscation-status,
+  #adminTab .admin-confiscation-duration-wrap,
+  #adminTab .admin-confiscation-days-field {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #adminTab .admin-confiscation-status,
+  #adminTab .admin-confiscation-duration-wrap {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  #adminTab .admin-confiscation-days-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  #adminTab .admin-confiscation-days-input {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  #adminTab .admin-confiscation-end-preview,
+  #adminTab .admin-confiscation-detail,
+  #adminTab .admin-confiscation-muted {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

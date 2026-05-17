@@ -473,12 +473,14 @@
       },
       "phoneSubmitted": true,
       "phoneTakenAt": null,
+      "phoneReason": "",
       "phoneConfiscation": null,
       "outingActive": false,
       "outingStartedAt": null,
+      "outingReason": "",
       "intervals": [],
       "overnights": [],
-      "updatedAt": "2026-05-10T12:48:27.256Z"
+      "updatedAt": "2026-05-17T11:58:09.306Z"
     },
     "강선우 1": {
       "profile": {
@@ -486,12 +488,14 @@
       },
       "phoneSubmitted": true,
       "phoneTakenAt": null,
+      "phoneReason": "",
       "phoneConfiscation": null,
       "outingActive": false,
       "outingStartedAt": null,
+      "outingReason": "",
       "intervals": [],
       "overnights": [],
-      "updatedAt": "2026-05-10T12:27:55.943Z"
+      "updatedAt": "2026-05-17T11:58:21.930Z"
     },
     "양민우": {
       "profile": {
@@ -952,174 +956,230 @@
   },
   "phoneLogs": [
     {
+      "id": "2492151be31f37b8",
+      "name": "강선우 1",
+      "startAt": "2026-05-17T11:57:32.529Z",
+      "endAt": "2026-05-17T11:58:21.930Z",
+      "durationSeconds": 49,
+      "reason": "ddd"
+    },
+    {
+      "id": "16d0bd0eb21d0d79",
+      "name": "김서진",
+      "startAt": "2026-05-17T11:35:53.332Z",
+      "endAt": "2026-05-17T11:58:09.306Z",
+      "durationSeconds": 1335,
+      "reason": "asdcx"
+    },
+    {
+      "id": "8f5515d93a782252",
+      "name": "김서진",
+      "startAt": "2026-05-17T11:33:55.617Z",
+      "endAt": "2026-05-17T11:35:48.411Z",
+      "durationSeconds": 112,
+      "reason": "테스트"
+    },
+    {
       "id": "ef495653145338af",
       "name": "강선우 1",
       "startAt": "2026-05-10T12:27:51.606Z",
       "endAt": "2026-05-10T12:27:52.682Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "1dfba760260ae489",
       "name": "강선우 1",
       "startAt": "2026-05-10T08:29:55.800Z",
       "endAt": "2026-05-10T08:29:56.276Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "102ed90b4a2eba17",
       "name": "강선우 1",
       "startAt": "2026-05-10T08:29:49.747Z",
       "endAt": "2026-05-10T08:29:55.090Z",
-      "durationSeconds": 5
+      "durationSeconds": 5,
+      "reason": ""
     },
     {
       "id": "67186ebd15565855",
       "name": "강선우 1",
       "startAt": "2026-05-10T08:16:26.156Z",
       "endAt": "2026-05-10T08:16:26.912Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "0da2ed259b035c04",
       "name": "김태흔",
       "startAt": "2026-05-10T08:11:49.857Z",
       "endAt": "2026-05-10T08:11:51.547Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "c9dd59408f52de1f",
       "name": "김태흔",
       "startAt": "2026-05-10T07:52:49.789Z",
       "endAt": "2026-05-10T07:52:50.742Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "3770e0e5c80349e5",
       "name": "김서진",
       "startAt": "2026-05-10T07:47:29.000Z",
       "endAt": "2026-05-10T07:47:31.033Z",
-      "durationSeconds": 2
+      "durationSeconds": 2,
+      "reason": ""
     },
     {
       "id": "87baf32fe932d161",
       "name": "김서진",
       "startAt": "2026-05-10T07:45:55.488Z",
       "endAt": "2026-05-10T07:45:58.016Z",
-      "durationSeconds": 2
+      "durationSeconds": 2,
+      "reason": ""
     },
     {
       "id": "e35c2a77c97a15bc",
       "name": "김원우",
       "startAt": "2026-05-09T17:25:08.459Z",
       "endAt": "2026-05-09T17:25:09.023Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "4affea08035026a6",
       "name": "김원우",
       "startAt": "2026-05-09T17:25:03.314Z",
       "endAt": "2026-05-09T17:25:05.022Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "df3d1b8c2ef93aa8",
       "name": "강지용",
       "startAt": "2026-05-08T06:17:05.678Z",
       "endAt": "2026-05-08T06:17:06.328Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "65eb3babd723c1d7",
       "name": "김서진",
       "startAt": "2026-05-08T06:16:42.028Z",
       "endAt": "2026-05-08T06:16:43.920Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "160d8a95566d8936",
       "name": "김서진",
       "startAt": "2026-05-08T06:16:39.740Z",
       "endAt": "2026-05-08T06:16:40.567Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "5eaef081049a11c7",
       "name": "강지용",
       "startAt": "2026-05-06T13:55:59.912Z",
       "endAt": "2026-05-06T13:56:05.901Z",
-      "durationSeconds": 5
+      "durationSeconds": 5,
+      "reason": ""
     },
     {
       "id": "d9abdf27a0243c36",
       "name": "강지용",
       "startAt": "2026-05-06T13:39:09.495Z",
       "endAt": "2026-05-06T13:39:13.055Z",
-      "durationSeconds": 3
+      "durationSeconds": 3,
+      "reason": ""
     }
   ],
   "outingLogs": [
+    {
+      "id": "2dd28041db9091f4",
+      "name": "김서진",
+      "startAt": "2026-05-17T11:58:01.877Z",
+      "endAt": "2026-05-17T11:58:08.460Z",
+      "durationSeconds": 6,
+      "reason": "asdcx"
+    },
     {
       "id": "8c3ae230fae9f5be",
       "name": "강선우 1",
       "startAt": "2026-05-10T12:27:54.709Z",
       "endAt": "2026-05-10T12:27:55.943Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "14c44b22d3a52ec5",
       "name": "강선우 1",
       "startAt": "2026-05-10T08:16:27.558Z",
       "endAt": "2026-05-10T08:16:29.279Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "e66655eb5eac730a",
       "name": "김원우",
       "startAt": "2026-05-10T08:16:11.991Z",
       "endAt": "2026-05-10T08:16:12.522Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "83ae54a9b2c486ef",
       "name": "김원우",
       "startAt": "2026-05-10T08:13:49.304Z",
       "endAt": "2026-05-10T08:16:11.306Z",
-      "durationSeconds": 142
+      "durationSeconds": 142,
+      "reason": ""
     },
     {
       "id": "f031e5b828783ebe",
       "name": "김태흔",
       "startAt": "2026-05-10T08:11:51.972Z",
       "endAt": "2026-05-10T08:11:53.456Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "4b580138e5a2f30b",
       "name": "김태흔",
       "startAt": "2026-05-10T07:52:53.231Z",
       "endAt": "2026-05-10T07:52:55.467Z",
-      "durationSeconds": 2
+      "durationSeconds": 2,
+      "reason": ""
     },
     {
       "id": "97f40d79a7d48509",
       "name": "김태흔",
       "startAt": "2026-05-10T07:52:51.441Z",
       "endAt": "2026-05-10T07:52:52.551Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     },
     {
       "id": "cbab0ed0eaedcebd",
       "name": "김서진",
       "startAt": "2026-05-10T07:45:59.487Z",
       "endAt": "2026-05-10T07:46:00.052Z",
-      "durationSeconds": 0
+      "durationSeconds": 0,
+      "reason": ""
     },
     {
       "id": "0f40bd25edd059e8",
       "name": "강지용",
       "startAt": "2026-05-08T06:17:07.014Z",
       "endAt": "2026-05-08T06:17:08.303Z",
-      "durationSeconds": 1
+      "durationSeconds": 1,
+      "reason": ""
     }
   ],
   "overnightLogs": [
@@ -1179,5 +1239,25 @@
       "action": "SET",
       "createdAt": "2026-05-10T12:48:19.025Z"
     }
-  ]
+  ],
+  "deviceRecords": {
+    "강선우 2": [
+      {
+        "deviceId": "device:2e99a2c66fad16372f3f26a00d0b10d5",
+        "deviceName": "Windows / Chrome",
+        "firstSeenAt": "2026-05-11T11:54:33.746Z",
+        "lastSeenAt": "2026-05-11T11:54:33.746Z",
+        "accessCount": 1
+      }
+    ],
+    "강선우 1": [
+      {
+        "deviceId": "device:01de7bb8ff663a3a9813d43777628c25",
+        "deviceName": "Windows / Chrome",
+        "firstSeenAt": "2026-05-16T17:08:20.434Z",
+        "lastSeenAt": "2026-05-17T11:57:29.642Z",
+        "accessCount": 4
+      }
+    ]
+  }
 }

@@ -697,6 +697,11 @@ option.blocked-option {
   background: #eff6ff;
 }
 
+.phone-log-card.is-active-log {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
 .phone-log-controls {
   display: flex;
   align-items: flex-end;
@@ -787,6 +792,31 @@ option.blocked-option {
   text-align: left;
 }
 
+.overnight-log-card {
+  border-width: 2px;
+  border-left-width: 8px;
+}
+
+.overnight-log-card.is-set {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.overnight-log-card.is-cancel {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.overnight-log-card.is-set .phone-log-duration strong,
+.overnight-log-card.is-set .phone-log-name {
+  color: #14532d;
+}
+
+.overnight-log-card.is-cancel .phone-log-duration strong,
+.overnight-log-card.is-cancel .phone-log-name {
+  color: #7f1d1d;
+}
+
 .phone-log-card-main {
   min-width: 0;
 }
@@ -825,10 +855,56 @@ option.blocked-option {
   color: #1d4ed8;
 }
 
+.phone-log-live-badge {
+  padding: 3px 8px;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .phone-log-range {
   color: #475569;
   font-size: 14px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.overnight-log-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.overnight-log-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.overnight-log-action.is-set {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.overnight-log-action.is-cancel {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.phone-log-reason {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
   overflow-wrap: anywhere;
 }
 
@@ -1083,6 +1159,10 @@ option.blocked-option {
   color: #d93025;
 }
 
+.status-reason-card #statusReasonMessage {
+  color: #d93025;
+}
+
 .protected-tab-pin-remember {
   display: flex;
   align-items: center;
@@ -1097,7 +1177,8 @@ option.blocked-option {
   height: 16px;
 }
 
-.protected-tab-pin-card .phone-confiscation-actions button[type="submit"] {
+.protected-tab-pin-card .phone-confiscation-actions button[type="submit"],
+.status-reason-card .phone-confiscation-actions button[type="submit"] {
   border-color: #0f172a;
   background: #0f172a;
   color: #ffffff;
@@ -1579,11 +1660,13 @@ option.blocked-option {
   cursor: not-allowed;
 }
 
-.slot-name-wrap.has-popover:hover .dashboard-popover {
+.slot-name-wrap.has-popover:hover .dashboard-popover,
+.slot-name-wrap.has-popover:focus-within .dashboard-popover {
   display: block;
 }
 
-.slot-name-wrap.has-popover:hover {
+.slot-name-wrap.has-popover:hover,
+.slot-name-wrap.has-popover:focus-within {
   z-index: 20;
 }
 
@@ -1594,6 +1677,15 @@ option.blocked-option {
   left: 0;
   pointer-events: none;
   z-index: 30;
+}
+
+.status-reason-popover-title {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.status-reason-popover-title:not(:first-child) {
+  margin-top: 6px;
 }
 
 @media (max-width: 800px) {

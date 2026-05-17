@@ -3,6 +3,7 @@ const PHONE_PANEL_TITLE = "\uc0c1\ud0dc";
 const PHONE_SUBMITTED_LABEL = "\ud3f0 \ub0c8\uc74c";
 const PHONE_TAKEN_LABEL = "\ud3f0 \uac00\uc838\uac10";
 const PHONE_BORROW_ACTION_LABEL = "\ud3f0 \ube4c\ub9ac\uae30";
+const PHONE_BORROW_REASON_TITLE = "\ud578\ub4dc\ud3f0 \ube4c\ub9ac\uae30";
 const PHONE_RETURN_ACTION_LABEL = "\ud3f0 \ubc18\ub0a9\ud558\uae30";
 const PHONE_DEFAULT_SUBMITTED = true;
 const PHONE_STATUS_TITLE = "\ud578\ub4dc\ud3f0";
@@ -45,9 +46,15 @@ const RETURN_LOG_TAB_LABEL = "\uae30\ub85d";
 const OUTING_LOG_TAB_LABEL = "\uc678\ucd9c \uae30\ub85d";
 const PHONE_RETURN_LOG_TAB_LABEL = "\ud578\ub4dc\ud3f0 \ubc18\ub0a9 \uae30\ub85d";
 const OVERNIGHT_LOG_TAB_LABEL = "\uc678\ubc15 \uae30\ub85d";
+const DEVICE_LOG_TAB_LABEL = "\uae30\uae30 \uae30\ub85d";
 const OVERNIGHT_LOG_SET_LABEL = "\uc678\ubc15 \uc124\uc815";
 const OVERNIGHT_LOG_CANCEL_LABEL = "\uc678\ubc15 \uc124\uc815 \ucde8\uc18c";
 const OVERNIGHT_LOG_TIME_TITLE = "\uae30\ub85d \uc2dc\uac04";
+const DEVICE_LOG_FIRST_SEEN_TITLE = "\ucc98\uc74c \uc811\uc18d";
+const DEVICE_LOG_LAST_SEEN_TITLE = "\ucd5c\uadfc \uc811\uc18d";
+const DEVICE_LOG_ACCESS_COUNT_TITLE = "\uc811\uc18d \ud69f\uc218";
+const DEVICE_LOG_IP_TITLE = "IP";
+const DEVICE_LOG_UNKNOWN_NAME = "\uc54c \uc218 \uc5c6\ub294 \uae30\uae30";
 const OFFLINE_CHANGE_TAB_LABEL = "\uc624\ud504\ub77c\uc778 \ubcc0\uacbd";
 const WARDEN_ONLY_LABEL = "\uc0ac\uac10 \uc804\uc6a9";
 const OFFLINE_CHANGE_DESCRIPTION = "\ud559\uc0dd\uc744 \uac80\uc0c9\ud574 \ud3f0/\uc678\ucd9c \uc0c1\ud0dc\ub97c \uc5ec\uae30\uc11c \ubc14\ub85c \ubc14\uafc0 \uc218 \uc788\uc2b5\ub2c8\ub2e4.";
@@ -63,7 +70,16 @@ const PHONE_LOG_WEEK_LABEL = "\uc774\ubc88 \uc8fc";
 const PHONE_LOG_COUNT_LABEL = "\ud45c\uc2dc";
 const PHONE_LOG_DURATION_TITLE = "\uc774\uc6a9 \uc2dc\uac04";
 const PHONE_LOG_COMPLETE_LABEL = "\uc0c1\ud0dc \uae30\ub85d";
+const STATUS_REASON_TITLE = "\uc0ac\uc720";
+const PHONE_REASON_PROMPT_LABEL = "\ud3f0 \uac00\uc838\uac10 \uc0ac\uc720\ub97c \uc785\ub825\ud558\uc138\uc694.";
+const OUTING_REASON_PROMPT_LABEL = "\uc678\ucd9c \uc0ac\uc720\ub97c \uc785\ub825\ud558\uc138\uc694.";
+const STATUS_REASON_REQUIRED_LABEL = "\uc0ac\uc720\ub97c \uc785\ub825\ud574\uc57c \ud569\ub2c8\ub2e4.";
+const STATUS_REASON_LENGTH_ERROR_LABEL = "\uc0ac\uc720\ub294 100\uc790 \uc774\ud558\ub85c \uc785\ub825\ud558\uc138\uc694.";
+const STATUS_REASON_CONFIRM_LABEL = "\ud655\uc778";
+const STATUS_REASON_CANCEL_LABEL = "\ucde8\uc18c";
+const ACTIVE_LOG_END_LABEL = "\uc9c4\ud589 \uc911";
 const SAVED_LOGIN_PASSWORDS_KEY = "gisook.savedLoginPasswords.v1";
+const DEVICE_ID_STORAGE_KEY = "gisook.deviceId.v1";
 const LEGACY_PROTECTED_TAB_PIN_STORAGE_KEY = "gisook.protectedTabPin.v1";
 const PROTECTED_TAB_PIN_TOKEN_HEADER = "X-Protected-Tab-Pin-Token";
 const PROTECTED_TAB_PIN_TITLE = "\uc778\uc99d PIN";
@@ -105,6 +121,7 @@ let phoneLogGradeFilter = "ALL";
 let phoneLogDateFilter = "ALL";
 let activeHistoryLogType = "outing";
 let phoneConfiscationModalSaveTimerId = null;
+let statusReasonModalResolver = null;
 let protectedTabPinTarget = "";
 let protectedTabPinRefreshAfter = false;
 let protectedTabPinBypass = false;
@@ -198,6 +215,7 @@ function setupPhoneModeUi() {
               <button class="history-log-tab-button is-active" type="button" data-history-log-tab="outing">${OUTING_LOG_TAB_LABEL}</button>
               <button class="history-log-tab-button" type="button" data-history-log-tab="phone">${PHONE_RETURN_LOG_TAB_LABEL}</button>
               <button class="history-log-tab-button" type="button" data-history-log-tab="overnight">${OVERNIGHT_LOG_TAB_LABEL}</button>
+              <button class="history-log-tab-button" type="button" data-history-log-tab="device">${DEVICE_LOG_TAB_LABEL}</button>
             </div>
             <div class="phone-log-controls">
               <label class="phone-log-search" for="phoneLogSearchInput">
@@ -254,6 +272,7 @@ function setupPhoneModeUi() {
   ensureDashboardStatusFilters();
   ensureDashboardUtilityPanel();
   ensurePhoneConfiscationModal();
+  ensureStatusReasonModal();
   ensureProtectedTabPinModal();
   settingsTab?.querySelector("#dayTabs")?.classList.add("hidden");
   settingsTab?.querySelector(".actions")?.classList.add("hidden");
@@ -372,6 +391,36 @@ function ensurePhoneConfiscationModal() {
           </label>
           <div id="phoneConfiscationEndPreview" class="phone-confiscation-end-preview hidden"></div>
         </div>
+      </div>
+    `,
+  );
+}
+
+function ensureStatusReasonModal() {
+  if (document.querySelector("#statusReasonModal")) {
+    return;
+  }
+
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `
+      <div id="statusReasonModal" class="phone-confiscation-modal status-reason-modal hidden" role="dialog" aria-modal="true" aria-labelledby="statusReasonTitle">
+        <form class="phone-confiscation-card status-reason-card" data-status-reason-form="true">
+          <div class="phone-confiscation-header">
+            <div>
+              <div id="statusReasonTitle" class="phone-confiscation-title">${STATUS_REASON_TITLE}</div>
+            </div>
+          </div>
+          <label class="phone-confiscation-field" for="statusReasonInput">
+            <span id="statusReasonPrompt">${PHONE_REASON_PROMPT_LABEL}</span>
+            <input id="statusReasonInput" type="text" maxlength="100" autocomplete="off" />
+          </label>
+          <div id="statusReasonMessage" class="phone-confiscation-end-preview hidden"></div>
+          <div class="phone-confiscation-actions">
+            <button type="button" data-status-reason-cancel="true">${STATUS_REASON_CANCEL_LABEL}</button>
+            <button type="submit">${STATUS_REASON_CONFIRM_LABEL}</button>
+          </div>
+        </form>
       </div>
     `,
   );
@@ -583,8 +632,45 @@ function setupProtectedApiPinFetch() {
 
   setupProtectedApiPinFetch.bound = true;
   fetchJson = function (url, fetchOptions = {}, options = {}) {
-    return originalFetchJson(url, withProtectedTabPinHeader(url, fetchOptions), options);
+    return originalFetchJson(url, withLoginDevicePayload(url, withProtectedTabPinHeader(url, fetchOptions)), options);
   };
+}
+
+function withLoginDevicePayload(url, fetchOptions = {}) {
+  if (!isLoginApiUrl(url)) {
+    return fetchOptions;
+  }
+
+  const nextOptions = { ...(fetchOptions || {}) };
+  const method = String(nextOptions.method || "GET").toUpperCase();
+  if (method !== "POST") {
+    return nextOptions;
+  }
+
+  let body = {};
+  try {
+    body = nextOptions.body ? JSON.parse(String(nextOptions.body)) : {};
+  } catch (_error) {
+    body = {};
+  }
+
+  nextOptions.body = JSON.stringify({
+    ...body,
+    device: getLoginDevicePayload(),
+  });
+
+  const headers = new Headers(nextOptions.headers || {});
+  headers.set("Content-Type", "application/json");
+  nextOptions.headers = headers;
+  return nextOptions;
+}
+
+function isLoginApiUrl(url) {
+  try {
+    return new URL(String(url || ""), window.location.origin).pathname === "/api/auth/login";
+  } catch (_error) {
+    return false;
+  }
 }
 
 function withProtectedTabPinHeader(url, fetchOptions = {}) {
@@ -606,6 +692,77 @@ function isProtectedWardenApiUrl(url) {
   } catch (_error) {
     return false;
   }
+}
+
+function getLoginDevicePayload() {
+  return {
+    id: getOrCreateDeviceId(),
+    name: getCurrentDeviceName(),
+  };
+}
+
+function getOrCreateDeviceId() {
+  const existing = String(localStorage.getItem(DEVICE_ID_STORAGE_KEY) || "").trim();
+  if (existing) {
+    return existing;
+  }
+
+  const nextId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(DEVICE_ID_STORAGE_KEY, nextId);
+  return nextId;
+}
+
+function getCurrentDeviceName() {
+  const userAgent = String(navigator.userAgent || "");
+  const platform = String(navigator.userAgentData?.platform || navigator.platform || "").trim();
+  const browser = getBrowserName(userAgent);
+  const mobile = navigator.userAgentData?.mobile || /Mobi|Android|iPhone|iPad/i.test(userAgent);
+  const parts = [platform || getPlatformName(userAgent), browser, mobile ? "\ubaa8\ubc14\uc77c" : ""].filter(Boolean);
+  return parts.join(" / ") || DEVICE_LOG_UNKNOWN_NAME;
+}
+
+function getPlatformName(userAgent) {
+  if (/iPhone/i.test(userAgent)) {
+    return "iPhone";
+  }
+  if (/iPad/i.test(userAgent)) {
+    return "iPad";
+  }
+  if (/Android/i.test(userAgent)) {
+    return "Android";
+  }
+  if (/Windows/i.test(userAgent)) {
+    return "Windows";
+  }
+  if (/Macintosh|Mac OS X/i.test(userAgent)) {
+    return "Mac";
+  }
+  if (/Linux/i.test(userAgent)) {
+    return "Linux";
+  }
+  return "";
+}
+
+function getBrowserName(userAgent) {
+  if (/Edg\//i.test(userAgent)) {
+    return "Edge";
+  }
+  if (/OPR\//i.test(userAgent)) {
+    return "Opera";
+  }
+  if (/Chrome\//i.test(userAgent) && !/Chromium/i.test(userAgent)) {
+    return "Chrome";
+  }
+  if (/Safari\//i.test(userAgent) && !/Chrome\//i.test(userAgent)) {
+    return "Safari";
+  }
+  if (/Firefox\//i.test(userAgent)) {
+    return "Firefox";
+  }
+  return "";
 }
 
 function clearProtectedTabPinApiAccess() {
@@ -786,6 +943,9 @@ function getOutingTimerText(outingStartedAt, outingActive = false) {
 function refreshPhoneTimers() {
   renderPhonePanel();
   renderOfflineChangePanel();
+  if (activeHistoryLogType === "phone" || activeHistoryLogType === "outing") {
+    renderPhoneLogs();
+  }
 
   document.querySelectorAll("[data-phone-timer]").forEach((timer) => {
     const phoneSubmitted = timer.dataset.phoneSubmitted === "true";
@@ -1048,7 +1208,12 @@ function getCurrentWeekRangeForUi() {
 }
 
 function getLogDateKey(log) {
-  const value = activeHistoryLogType === "overnight" ? log?.createdAt : log?.endAt || log?.startAt;
+  const value =
+    activeHistoryLogType === "overnight"
+      ? log?.createdAt
+      : activeHistoryLogType === "device"
+        ? log?.lastSeenAt || log?.firstSeenAt
+        : log?.endAt || log?.startAt;
   return getSeoulDateKey(value);
 }
 
@@ -1107,6 +1272,10 @@ function getOvernightLogActionText(action) {
   return String(action || "").toUpperCase() === "CANCEL" ? OVERNIGHT_LOG_CANCEL_LABEL : OVERNIGHT_LOG_SET_LABEL;
 }
 
+function getOvernightLogActionClass(action) {
+  return String(action || "").toUpperCase() === "CANCEL" ? "is-cancel" : "is-set";
+}
+
 function getPhoneLogSearchQuery() {
   return String(document.querySelector("#phoneLogSearchInput")?.value || "").trim();
 }
@@ -1125,6 +1294,102 @@ function getPhoneLogStudentMeta(name) {
     grade: Number.isInteger(grade) ? grade : null,
     room,
   };
+}
+
+function getLogDurationSeconds(startAt, endAt = new Date().toISOString()) {
+  const startMs = Date.parse(startAt || "");
+  const endMs = Date.parse(endAt || "");
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor((endMs - startMs) / 1000));
+}
+
+function buildActivePhoneLog(user, nowIso) {
+  const name = String(user?.name || "").trim();
+  const startAt = getPhoneTakenAtForDisplay(name, Boolean(user?.phoneSubmitted), user?.phoneTakenAt);
+  if (!name || user?.phoneSubmitted !== false || !startAt) {
+    return null;
+  }
+
+  return {
+    id: `active-phone-${name}`,
+    name,
+    startAt,
+    endAt: nowIso,
+    durationSeconds: getLogDurationSeconds(startAt, nowIso),
+    reason: String(user?.phoneReason || "").trim(),
+    active: true,
+  };
+}
+
+function buildActiveOutingLog(user, nowIso) {
+  const name = String(user?.name || "").trim();
+  const outingActive = Boolean(user?.outingActive);
+  const startAt = getOutingStartedAtForDisplay(name, outingActive, user?.outingStartedAt || user?.currentInterval?.startedAt);
+  if (!name || !outingActive || !startAt || user?.isOvernight) {
+    return null;
+  }
+
+  return {
+    id: `active-outing-${name}`,
+    name,
+    startAt,
+    endAt: nowIso,
+    durationSeconds: getLogDurationSeconds(startAt, nowIso),
+    reason: String(user?.outingReason || user?.currentInterval?.reason || "").trim(),
+    active: true,
+  };
+}
+
+function getActiveStatusLogs(type) {
+  if (type !== "phone" && type !== "outing") {
+    return [];
+  }
+
+  const nowIso = new Date().toISOString();
+  return getDashboardUsers()
+    .map((user) => (type === "phone" ? buildActivePhoneLog(user, nowIso) : buildActiveOutingLog(user, nowIso)))
+    .filter(Boolean);
+}
+
+function getHistoryLogSortTime(log) {
+  const time = Date.parse(log?.endAt || log?.startAt || "");
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function compareHistoryLogs(left, right) {
+  if (Boolean(left?.active) !== Boolean(right?.active)) {
+    return left?.active ? -1 : 1;
+  }
+
+  return getHistoryLogSortTime(right) - getHistoryLogSortTime(left);
+}
+
+function getHistoryLogsForActiveType() {
+  const storedLogs =
+    activeHistoryLogType === "device"
+      ? Array.isArray(state.deviceLogs)
+        ? state.deviceLogs
+        : []
+      : activeHistoryLogType === "phone"
+      ? Array.isArray(state.phoneLogs)
+        ? state.phoneLogs
+        : []
+      : activeHistoryLogType === "overnight"
+        ? Array.isArray(state.overnightLogs)
+          ? state.overnightLogs
+          : []
+        : Array.isArray(state.outingLogs)
+          ? state.outingLogs
+          : [];
+
+  if (activeHistoryLogType !== "phone" && activeHistoryLogType !== "outing") {
+    return storedLogs;
+  }
+
+  return [...getActiveStatusLogs(activeHistoryLogType), ...storedLogs].sort(compareHistoryLogs);
 }
 
 function getFilteredPhoneLogs(logs) {
@@ -1217,18 +1482,7 @@ function renderPhoneLogs() {
     return;
   }
 
-  const logs =
-    activeHistoryLogType === "phone"
-      ? Array.isArray(state.phoneLogs)
-        ? state.phoneLogs
-        : []
-      : activeHistoryLogType === "overnight"
-        ? Array.isArray(state.overnightLogs)
-          ? state.overnightLogs
-          : []
-        : Array.isArray(state.outingLogs)
-          ? state.outingLogs
-          : [];
+  const logs = getHistoryLogsForActiveType();
   const filteredLogs = getFilteredPhoneLogs(logs);
   updatePhoneLogFilterButtons();
   if (count) {
@@ -1246,7 +1500,9 @@ function renderPhoneLogs() {
   }
 
   rows.innerHTML =
-    activeHistoryLogType === "overnight"
+    activeHistoryLogType === "device"
+      ? renderDeviceLogRows(filteredLogs)
+      : activeHistoryLogType === "overnight"
       ? filteredLogs
           .slice(0, 100)
           .map((log) => {
@@ -1256,16 +1512,20 @@ function renderPhoneLogs() {
             const room = meta.room ? `<span class="phone-log-room">${escapeHtml(meta.room)}${ROOM_SUFFIX_LABEL}</span>` : "";
             const targetDate = escapeHtml(formatOvernightLogDate(log.targetDate));
             const actionText = escapeHtml(getOvernightLogActionText(log.action));
+            const actionClass = getOvernightLogActionClass(log.action);
             const createdAt = escapeHtml(formatPhoneLogTime(log.createdAt));
             return `
-              <article class="phone-log-card">
+              <article class="phone-log-card overnight-log-card ${actionClass}">
                 <div class="phone-log-card-main">
                   <div class="phone-log-name-row">
                     <strong class="phone-log-name">${name}</strong>
                     ${grade}
                     ${room}
                   </div>
-                  <div class="phone-log-range">${targetDate} ${actionText}</div>
+                  <div class="phone-log-range overnight-log-range">
+                    <span>${targetDate}</span>
+                    <span class="overnight-log-action ${actionClass}">${actionText}</span>
+                  </div>
                 </div>
                 <div class="phone-log-duration">
                   <span>${OVERNIGHT_LOG_TIME_TITLE}</span>
@@ -1283,12 +1543,16 @@ function renderPhoneLogs() {
       const grade = meta.grade ? `<span class="phone-log-badge">${meta.grade}${GRADE_SUFFIX_LABEL}</span>` : "";
       const room = meta.room ? `<span class="phone-log-room">${escapeHtml(meta.room)}${ROOM_SUFFIX_LABEL}</span>` : "";
       const start = escapeHtml(formatPhoneLogTime(log.startAt));
-      const end = escapeHtml(formatPhoneLogTime(log.endAt));
+      const end = log.active ? ACTIVE_LOG_END_LABEL : escapeHtml(formatPhoneLogTime(log.endAt));
+      const rangeText = log.active ? `${start}${FROM_LABEL} ${end}` : `${start}${FROM_LABEL} ${end}${TO_LABEL}`;
       const duration = escapeHtml(formatPhoneLogDuration(log.durationSeconds));
+      const reason = escapeHtml(log.reason || "");
       const isPhoneLog = activeHistoryLogType === "phone";
+      const activeClass = log.active ? " is-active-log" : "";
+      const activeBadge = log.active ? `<span class="phone-log-live-badge">${ACTIVE_LOG_END_LABEL}</span>` : "";
       const cardOpen = isPhoneLog
-        ? `<button class="phone-log-card is-clickable" type="button" data-phone-confiscation-name="${name}">`
-        : `<article class="phone-log-card">`;
+        ? `<button class="phone-log-card is-clickable${activeClass}" type="button" data-phone-confiscation-name="${name}">`
+        : `<article class="phone-log-card${activeClass}">`;
       const cardClose = isPhoneLog ? "</button>" : "</article>";
       return `
         ${cardOpen}
@@ -1297,14 +1561,53 @@ function renderPhoneLogs() {
               <strong class="phone-log-name">${name}</strong>
               ${grade}
               ${room}
+              ${activeBadge}
             </div>
-            <div class="phone-log-range">${start}${FROM_LABEL} ${end}${TO_LABEL}</div>
+            <div class="phone-log-range">${rangeText}</div>
+            ${reason ? `<div class="phone-log-reason">${STATUS_REASON_TITLE}: ${reason}</div>` : ""}
           </div>
           <div class="phone-log-duration">
             <span>${PHONE_LOG_DURATION_TITLE}</span>
             <strong>${duration}</strong>
           </div>
         ${cardClose}
+      `;
+    })
+    .join("");
+}
+
+function renderDeviceLogRows(logs) {
+  return logs
+    .slice(0, 200)
+    .map((log) => {
+      const name = escapeHtml(log.name || "");
+      const meta = getPhoneLogStudentMeta(log.name);
+      const grade = meta.grade ? `<span class="phone-log-badge">${meta.grade}${GRADE_SUFFIX_LABEL}</span>` : "";
+      const room = meta.room ? `<span class="phone-log-room">${escapeHtml(meta.room)}${ROOM_SUFFIX_LABEL}</span>` : "";
+      const deviceName = escapeHtml(log.deviceName || DEVICE_LOG_UNKNOWN_NAME);
+      const ipAddress = escapeHtml(log.ipAddress || "");
+      const firstSeenAt = escapeHtml(formatPhoneLogTime(log.firstSeenAt));
+      const lastSeenAt = escapeHtml(formatPhoneLogTime(log.lastSeenAt));
+      const accessCount = Math.max(1, Number(log.accessCount || 1));
+
+      return `
+        <article class="phone-log-card">
+          <div class="phone-log-card-main">
+            <div class="phone-log-name-row">
+              <strong class="phone-log-name">${name}</strong>
+              ${grade}
+              ${room}
+            </div>
+            <div class="phone-log-range">${deviceName}</div>
+            ${ipAddress ? `<div class="phone-log-range">${DEVICE_LOG_IP_TITLE} ${ipAddress}</div>` : ""}
+            <div class="phone-log-range">${DEVICE_LOG_FIRST_SEEN_TITLE} ${firstSeenAt}</div>
+          </div>
+          <div class="phone-log-duration">
+            <span>${DEVICE_LOG_LAST_SEEN_TITLE}</span>
+            <strong>${lastSeenAt}</strong>
+            <span>${DEVICE_LOG_ACCESS_COUNT_TITLE} ${accessCount}</span>
+          </div>
+        </article>
       `;
     })
     .join("");
@@ -1723,13 +2026,24 @@ async function handleOfflineChangeClick(event) {
   }
 
   const status = getOfflineStudentStatus(name);
+  const reason = phoneButton
+    ? status.phoneSubmitted
+      ? await requestStatusChangeReason("phone")
+      : ""
+    : !status.outingActive
+      ? await requestStatusChangeReason("outing")
+      : "";
+  if (reason === null) {
+    return;
+  }
+
   button.disabled = true;
 
   try {
     if (phoneButton) {
-      await savePhoneStatusForName(name, !status.phoneSubmitted);
+      await savePhoneStatusForName(name, !status.phoneSubmitted, reason);
     } else {
-      await saveOutingStatusForName(name, !status.outingActive);
+      await saveOutingStatusForName(name, !status.outingActive, reason);
     }
   } catch (error) {
     setMessage(error.message, true);
@@ -1933,10 +2247,10 @@ function canChangePhoneForName(name, nextPhoneSubmitted = null) {
   return true;
 }
 
-async function savePhoneStatusForName(name, phoneSubmitted) {
+async function savePhoneStatusForName(name, phoneSubmitted, reason = "") {
   const targetName = String(name || "").trim();
   if (!targetName) {
-    return;
+    return false;
   }
 
   if (!canChangePhoneForName(targetName, Boolean(phoneSubmitted))) {
@@ -1944,7 +2258,7 @@ async function savePhoneStatusForName(name, phoneSubmitted) {
     if (status.phoneSubmitted && Boolean(phoneSubmitted) === false && isPhoneConfiscated(status.phoneConfiscation)) {
       setMessage(formatPhoneConfiscationBorrowableMessage(status.phoneConfiscation), true);
     }
-    return;
+    return false;
   }
 
   const payload = await fetchJson(`/api/users/${encodeURIComponent(targetName)}`, {
@@ -1954,6 +2268,7 @@ async function savePhoneStatusForName(name, phoneSubmitted) {
     },
     body: JSON.stringify({
       phoneSubmitted: Boolean(phoneSubmitted),
+      phoneReason: Boolean(phoneSubmitted) ? "" : reason,
     }),
   });
 
@@ -1970,12 +2285,13 @@ async function savePhoneStatusForName(name, phoneSubmitted) {
 
   await refreshDashboard();
   refreshPhoneTimers();
+  return true;
 }
 
-async function saveOutingStatusForName(name, outingActive) {
+async function saveOutingStatusForName(name, outingActive, reason = "") {
   const targetName = String(name || "").trim();
   if (!targetName || !canChangeOutingForName(targetName)) {
-    return;
+    return false;
   }
 
   const payload = await fetchJson(`/api/users/${encodeURIComponent(targetName)}`, {
@@ -1985,6 +2301,7 @@ async function saveOutingStatusForName(name, outingActive) {
     },
     body: JSON.stringify({
       outingActive: Boolean(outingActive),
+      outingReason: Boolean(outingActive) ? reason : "",
     }),
   });
 
@@ -2001,6 +2318,7 @@ async function saveOutingStatusForName(name, outingActive) {
 
   await refreshDashboard();
   refreshPhoneTimers();
+  return true;
 }
 
 async function handlePhoneToggleClick(event) {
@@ -2017,13 +2335,18 @@ async function handlePhoneToggleClick(event) {
   const previousPhoneSubmitted = getPhoneSubmittedFromState();
   const previousPhoneTakenAt = getPhoneTakenAtFromState();
   const nextPhoneSubmitted = !previousPhoneSubmitted;
+  const reason = nextPhoneSubmitted ? "" : await requestStatusChangeReason("phone");
+  if (reason === null) {
+    return;
+  }
+
   const optimisticPhoneTakenAt = nextPhoneSubmitted ? null : new Date().toISOString();
   setPhoneSubmittedInState(nextPhoneSubmitted);
   setPhoneTakenAtInState(optimisticPhoneTakenAt);
   renderPhonePanel();
 
   try {
-    await savePhoneStatusForName(selectedName, nextPhoneSubmitted);
+    await savePhoneStatusForName(selectedName, nextPhoneSubmitted, reason);
   } catch (error) {
     setPhoneSubmittedInState(previousPhoneSubmitted);
     setPhoneTakenAtInState(previousPhoneTakenAt);
@@ -2047,13 +2370,18 @@ async function handleOutingToggleClick(event) {
   const previousOutingActive = getOutingActiveFromState();
   const previousOutingStartedAt = getOutingStartedAtFromState();
   const nextOutingActive = !previousOutingActive;
+  const reason = nextOutingActive ? await requestStatusChangeReason("outing") : "";
+  if (reason === null) {
+    return;
+  }
+
   const optimisticOutingStartedAt = nextOutingActive ? new Date().toISOString() : null;
   setOutingActiveInState(nextOutingActive);
   setOutingStartedAtInState(optimisticOutingStartedAt);
   renderPhonePanel();
 
   try {
-    await saveOutingStatusForName(selectedName, nextOutingActive);
+    await saveOutingStatusForName(selectedName, nextOutingActive, reason);
   } catch (error) {
     setOutingActiveInState(previousOutingActive);
     setOutingStartedAtInState(previousOutingStartedAt);
@@ -2094,6 +2422,130 @@ async function handleAttendanceToggleClick(event) {
   } finally {
     button.disabled = Boolean(state.attendanceChecked);
   }
+}
+
+function getStatusReasonModalElements() {
+  return {
+    modal: document.querySelector("#statusReasonModal"),
+    title: document.querySelector("#statusReasonTitle"),
+    prompt: document.querySelector("#statusReasonPrompt"),
+    input: document.querySelector("#statusReasonInput"),
+    message: document.querySelector("#statusReasonMessage"),
+  };
+}
+
+function normalizeRequestedStatusReason(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function setStatusReasonModalMessage(text = "") {
+  const { message } = getStatusReasonModalElements();
+  if (!message) {
+    return;
+  }
+
+  message.textContent = text;
+  message.classList.toggle("hidden", !text);
+}
+
+function closeStatusReasonModal(value = null) {
+  const { modal, input } = getStatusReasonModalElements();
+  modal?.classList.add("hidden");
+  if (input) {
+    input.value = "";
+  }
+  setStatusReasonModalMessage("");
+
+  if (statusReasonModalResolver) {
+    const resolver = statusReasonModalResolver;
+    statusReasonModalResolver = null;
+    resolver(value);
+  }
+}
+
+function validateStatusReasonModalInput() {
+  const { input } = getStatusReasonModalElements();
+  const reason = normalizeRequestedStatusReason(input?.value);
+  if (!reason) {
+    setStatusReasonModalMessage(STATUS_REASON_REQUIRED_LABEL);
+    setMessage(STATUS_REASON_REQUIRED_LABEL, true);
+    input?.focus();
+    return null;
+  }
+
+  if (reason.length > 100) {
+    setStatusReasonModalMessage(STATUS_REASON_LENGTH_ERROR_LABEL);
+    setMessage(STATUS_REASON_LENGTH_ERROR_LABEL, true);
+    input?.focus();
+    return null;
+  }
+
+  return reason;
+}
+
+function requestStatusChangeReason(type) {
+  ensureStatusReasonModal();
+  if (statusReasonModalResolver) {
+    closeStatusReasonModal(null);
+  }
+
+  const { modal, title, prompt, input } = getStatusReasonModalElements();
+  if (!modal || !input) {
+    return Promise.resolve(null);
+  }
+
+  const isPhone = type === "phone";
+  if (title) {
+    title.textContent = isPhone ? PHONE_BORROW_ACTION_LABEL : OUTING_LEAVE_ACTION_LABEL;
+  }
+  if (prompt) {
+    prompt.textContent = isPhone ? PHONE_REASON_PROMPT_LABEL : OUTING_REASON_PROMPT_LABEL;
+  }
+  input.value = "";
+  setStatusReasonModalMessage("");
+  modal.classList.remove("hidden");
+  window.setTimeout(() => input.focus(), 0);
+
+  return new Promise((resolve) => {
+    statusReasonModalResolver = resolve;
+  });
+}
+
+function handleStatusReasonModalClick(event) {
+  const { modal } = getStatusReasonModalElements();
+  if (!modal || modal.classList.contains("hidden")) {
+    return;
+  }
+
+  if (event.target === modal || event.target.closest("[data-status-reason-cancel]")) {
+    closeStatusReasonModal(null);
+  }
+}
+
+function handleStatusReasonModalInput(event) {
+  if (event.target?.id !== "statusReasonInput") {
+    return;
+  }
+
+  setStatusReasonModalMessage("");
+}
+
+function handleStatusReasonModalSubmit(event) {
+  const form = event.target?.closest?.("[data-status-reason-form]");
+  if (!form) {
+    return;
+  }
+
+  event.preventDefault();
+  const reason = validateStatusReasonModalInput();
+  if (reason === null) {
+    return;
+  }
+
+  clearMessage();
+  closeStatusReasonModal(reason);
 }
 
 async function loadUser(name) {
@@ -2709,6 +3161,7 @@ async function refreshDashboard() {
     state.phoneLogs = Array.isArray(payload.phoneLogs) ? payload.phoneLogs : [];
     state.outingLogs = Array.isArray(payload.outingLogs) ? payload.outingLogs : [];
     state.overnightLogs = Array.isArray(payload.overnightLogs) ? payload.overnightLogs : [];
+    state.deviceLogs = Array.isArray(payload.deviceLogs) ? payload.deviceLogs : [];
     syncSelectedPhoneStateFromDashboard(payload.users || []);
     updateDashboardFilterButtons();
     renderDashboardSummary();
@@ -2750,6 +3203,39 @@ function canTogglePhoneForOccupant(occupant) {
   return false;
 }
 
+function getDashboardReasonText(value) {
+  const reason = String(value || "").trim();
+  return reason || DASHBOARD_STATUS_NONE_LABEL;
+}
+
+function renderDashboardReasonPopover(occupant, phoneSubmitted) {
+  if (!occupant || occupant.empty) {
+    return "";
+  }
+
+  const rows = [];
+  if (occupant.isOut || occupant.outingActive) {
+    rows.push([OUTING_STATUS_TITLE, occupant.outingReason || occupant.currentInterval?.reason]);
+  }
+  if (!phoneSubmitted) {
+    rows.push([PHONE_BORROW_REASON_TITLE, occupant.phoneReason]);
+  }
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const content = rows
+    .map(
+      ([label, reason]) => `
+        <div class="status-reason-popover-title">${escapeHtml(label)}</div>
+        <div>${STATUS_REASON_TITLE}: ${escapeHtml(getDashboardReasonText(reason))}</div>
+      `,
+    )
+    .join("");
+
+  return `<div class="dashboard-popover status-reason-popover">${content}</div>`;
+}
+
 function renderRoomSlot(occupant) {
   const isAttendanceMode = Boolean(state.dashboardAttendanceMode);
   const statusClass = occupant.empty
@@ -2763,27 +3249,30 @@ function renderRoomSlot(occupant) {
         : occupant.phoneSubmitted
           ? "phone-submitted"
           : "phone-taken";
-  const wrapClass = "slot-name-wrap";
   const nameLabel = occupant.empty ? "" : occupant.name;
   const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
   const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
   const phoneSubmitted = Boolean(occupant.phoneSubmitted);
+  const popover = renderDashboardReasonPopover(occupant, phoneSubmitted);
+  const wrapClass = popover ? "slot-name-wrap has-popover" : "slot-name-wrap";
   const phoneTakenAt = getPhoneTakenAtForDisplay(nameLabel, phoneSubmitted, occupant.phoneTakenAt);
   const phoneLabel = phoneSubmitted ? PHONE_SUBMITTED_LABEL : PHONE_TAKEN_LABEL;
   const outingLabel = occupant.isOut ? ` / ${OUTING_ACTIVE_LABEL}` : "";
   const timerLabel = getPhoneTimerText(phoneTakenAt, phoneSubmitted);
   const canToggleAttendance = canToggleAttendanceForOccupant(occupant);
+  const focusAttribute = popover ? ' tabindex="0"' : "";
   const nameMarkup = occupant.empty
     ? `<div class="${nameClass}"></div>`
     : canToggleAttendance
       ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
-      : `<div class="${nameClass}" title="${escapeHtml(`${phoneLabel} ${timerLabel}${outingLabel}`)}">${escapeHtml(nameLabel)}</div>`;
+      : `<div class="${nameClass}"${focusAttribute} title="${escapeHtml(`${phoneLabel} ${timerLabel}${outingLabel}`)}">${escapeHtml(nameLabel)}</div>`;
 
   return `
     <div class="room-slot">
       <div class="slot-number">${gradeLabel}</div>
       <div class="${wrapClass}">
         ${nameMarkup}
+        ${popover}
       </div>
     </div>
   `;
@@ -2920,15 +3409,19 @@ document.addEventListener("DOMContentLoaded", () => {
   getReturnLogTab()?.addEventListener("input", handlePhoneLogSearchInput);
   getReturnLogTab()?.addEventListener("click", handlePhoneLogFilterClick);
   document.addEventListener("click", handlePhoneConfiscationModalClick);
+  document.addEventListener("click", handleStatusReasonModalClick);
   document.addEventListener("click", handleProtectedTabPinModalClick);
   document.addEventListener("input", handlePhoneConfiscationModalInput);
+  document.addEventListener("input", handleStatusReasonModalInput);
   document.addEventListener("input", handleProtectedTabPinInput);
   document.addEventListener("change", handlePhoneConfiscationModalChange);
+  document.addEventListener("submit", handleStatusReasonModalSubmit);
   document.addEventListener("submit", handleProtectedTabPinSubmit);
   document.addEventListener("keydown", handlePhoneConfiscationModalKeydown);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closePhoneConfiscationModal();
+      closeStatusReasonModal();
       closeProtectedTabPinModal();
     }
   });

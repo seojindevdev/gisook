@@ -44,6 +44,7 @@ const DEFAULT_PROTECTED_TAB_PIN_HASH = {
 };
 const PARENT_API_REQUEST_LOG_LIMIT = 500;
 const PARENT_OVERNIGHT_REASON = "학부모 신청 외박";
+const DEVICE_RECORD_ID_PREFIX = "device:";
 const authSessions = new Map();
 const dashboardEventClients = new Set();
 const attendanceEventClients = new Set();
@@ -186,6 +187,10 @@ async function handleApiRequest(req, res, pathname, requestUrl) {
 
     if (!role || !loginName) {
       throwHttpError(401, "비밀번호가 올바르지 않습니다.");
+    }
+
+    if (role === "student") {
+      recordStudentLoginDevice(req, loginName, payload?.device);
     }
 
     const token = createSessionToken();
@@ -920,6 +925,7 @@ function normalizeDatabaseDocument(raw, roster = []) {
     phoneLogs: normalizePhoneLogs(raw.phoneLogs),
     outingLogs: normalizeOutingLogs(raw.outingLogs),
     overnightLogs: normalizeOvernightLogs(raw.overnightLogs),
+    deviceRecords: normalizeDeviceRecords(raw.deviceRecords),
   };
 }
 
@@ -1099,7 +1105,8 @@ function buildUserResponse(session, userName) {
   const phoneConfiscation = getPhoneConfiscationInfo(userRecord, now);
   const outingActive = normalizeOutingActive(userRecord?.outingActive);
   const outingStartedAt = resolveOutingStartedAt(userRecord, outingActive);
-  const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt);
+  const outingReason = normalizeStatusChangeReason(userRecord?.outingReason);
+  const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt, outingReason);
 
   return {
     name: person.name,
@@ -1110,9 +1117,11 @@ function buildUserResponse(session, userName) {
     overnights,
     phoneSubmitted,
     phoneTakenAt,
+    phoneReason: normalizeStatusChangeReason(userRecord?.phoneReason),
     phoneConfiscation,
     outingActive,
     outingStartedAt,
+    outingReason,
     attendanceModeActive: Boolean(attendanceDocument.modeActive),
     attendanceDateKey,
     attendanceChecked: Boolean(attendanceRecord[person.name]),
@@ -1166,14 +1175,19 @@ function saveUserSchedule(session, userName, payload) {
       : normalizePhoneSubmitted(payload.phoneSubmitted);
   const previousPhoneSubmitted = normalizePhoneSubmitted(previousRecord?.phoneSubmitted);
   const previousPhoneTakenAt = resolvePhoneTakenAt(previousRecord, previousPhoneSubmitted);
+  const previousPhoneReason = normalizeStatusChangeReason(previousRecord?.phoneReason);
+  const requestedPhoneReason = normalizeStatusChangeReason(payload.phoneReason);
   const phoneConfiscation = normalizePhoneConfiscation(previousRecord?.phoneConfiscation, now);
   const savedAt = new Date().toISOString();
   const previousOutingActive = normalizeOutingActive(previousRecord?.outingActive);
   const previousOutingStartedAt = resolveOutingStartedAt(previousRecord, previousOutingActive);
+  const previousOutingReason = normalizeStatusChangeReason(previousRecord?.outingReason);
+  const requestedOutingReason = normalizeStatusChangeReason(payload.outingReason);
   const previousStatus = resolveStatusWithManualOuting(
     computeStatus(previousIntervals, previousOvernights, now),
     previousOutingActive,
     previousOutingStartedAt,
+    previousOutingReason,
   );
   if ((payload.phoneSubmitted !== undefined || payload.outingActive !== undefined) && previousStatus.isOvernight) {
     throwHttpError(403, "외박 중인 학생은 핸드폰/외출 상태를 변경할 수 없습니다.");
@@ -1186,29 +1200,45 @@ function saveUserSchedule(session, userName, payload) {
   ) {
     throwHttpError(403, "핸드폰 압수 중에는 핸드폰을 가져갈 수 없습니다.");
   }
+  if (payload.phoneSubmitted !== undefined && previousPhoneSubmitted === true && phoneSubmitted === false && !requestedPhoneReason) {
+    throwHttpError(400, "핸드폰 가져감 사유를 입력하세요.");
+  }
   const phoneTakenAt =
     phoneSubmitted
       ? DEFAULT_PHONE_TAKEN_AT
       : payload.phoneSubmitted === undefined || previousPhoneSubmitted === false
         ? previousPhoneTakenAt
         : savedAt;
+  const phoneReason = phoneSubmitted
+    ? ""
+    : payload.phoneSubmitted !== undefined && previousPhoneSubmitted === true && phoneSubmitted === false
+      ? requestedPhoneReason
+      : previousPhoneReason;
   const outingActive =
     payload.outingActive === undefined
       ? normalizeOutingActive(previousRecord?.outingActive)
       : normalizeOutingActive(payload.outingActive);
+  if (payload.outingActive !== undefined && previousOutingActive === false && outingActive === true && !requestedOutingReason) {
+    throwHttpError(400, "외출 사유를 입력하세요.");
+  }
   const outingStartedAt =
     outingActive
       ? payload.outingActive === undefined || previousOutingActive
         ? previousOutingStartedAt
         : savedAt
       : DEFAULT_OUTING_STARTED_AT;
+  const outingReason = outingActive
+    ? payload.outingActive !== undefined && previousOutingActive === false && outingActive === true
+      ? requestedOutingReason
+      : previousOutingReason
+    : "";
   const phoneLogs = normalizePhoneLogs(database.phoneLogs);
   if (payload.phoneSubmitted !== undefined && previousPhoneSubmitted === false && phoneSubmitted === true) {
-    phoneLogs.unshift(createPhoneLog(person.name, previousPhoneTakenAt || savedAt, savedAt));
+    phoneLogs.unshift(createPhoneLog(person.name, previousPhoneTakenAt || savedAt, savedAt, previousPhoneReason));
   }
   const outingLogs = normalizeOutingLogs(database.outingLogs);
   if (payload.outingActive !== undefined && previousOutingActive === true && outingActive === false) {
-    outingLogs.unshift(createOutingLog(person.name, previousOutingStartedAt || savedAt, savedAt));
+    outingLogs.unshift(createOutingLog(person.name, previousOutingStartedAt || savedAt, savedAt, previousOutingReason));
   }
 
   database.users[person.name] = {
@@ -1217,9 +1247,11 @@ function saveUserSchedule(session, userName, payload) {
     },
     phoneSubmitted,
     phoneTakenAt,
+    phoneReason,
     phoneConfiscation,
     outingActive,
     outingStartedAt,
+    outingReason,
     intervals: intervals.map(({ day, start, end, reason, outing, phone }) => ({
       day,
       start,
@@ -1265,7 +1297,9 @@ function buildDashboardResponse(session, options = {}) {
     const phoneConfiscation = getPhoneConfiscationInfo(userRecord, now);
     const outingActive = normalizeOutingActive(userRecord?.outingActive);
     const outingStartedAt = resolveOutingStartedAt(userRecord, outingActive);
-    const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt);
+    const phoneReason = normalizeStatusChangeReason(userRecord?.phoneReason);
+    const outingReason = normalizeStatusChangeReason(userRecord?.outingReason);
+    const status = resolveStatusWithManualOuting(computeStatus(intervals, overnights, now), outingActive, outingStartedAt, outingReason);
 
     return {
       name: person.name,
@@ -1277,9 +1311,11 @@ function buildDashboardResponse(session, options = {}) {
       isOvernight: status.isOvernight,
       phoneSubmitted,
       phoneTakenAt,
+      phoneReason,
       phoneConfiscation,
       outingActive,
       outingStartedAt,
+      outingReason,
       statusLabel: status.statusLabel,
       currentInterval: status.currentInterval,
       currentOvernight: status.currentOvernight,
@@ -1304,9 +1340,11 @@ function buildDashboardResponse(session, options = {}) {
           isOvernight: false,
           phoneSubmitted: null,
           phoneTakenAt: null,
+          phoneReason: "",
           phoneConfiscation: null,
           outingActive: false,
           outingStartedAt: null,
+          outingReason: "",
           statusLabel: "빈자리",
           currentInterval: null,
           currentOvernight: null,
@@ -1340,6 +1378,7 @@ function buildDashboardResponse(session, options = {}) {
     phoneLogs: includeProtectedLogs ? normalizePhoneLogs(database.phoneLogs).slice(0, 100) : [],
     outingLogs: includeProtectedLogs ? normalizeOutingLogs(database.outingLogs).slice(0, 100) : [],
     overnightLogs: includeProtectedLogs ? normalizeOvernightLogs(database.overnightLogs).slice(0, 100) : [],
+    deviceLogs: includeProtectedLogs ? buildDeviceLogRows(database.deviceRecords, roster).slice(0, 200) : [],
   };
 }
 
@@ -1426,9 +1465,11 @@ function saveParentOvernights(payload) {
           profile: { room: person.room },
           phoneSubmitted: DEFAULT_PHONE_SUBMITTED,
           phoneTakenAt: DEFAULT_PHONE_TAKEN_AT,
+          phoneReason: "",
           phoneConfiscation: DEFAULT_PHONE_CONFISCATION,
           outingActive: DEFAULT_OUTING_ACTIVE,
           outingStartedAt: DEFAULT_OUTING_STARTED_AT,
+          outingReason: "",
           intervals: [],
           overnights: [],
           updatedAt: null,
@@ -2009,6 +2050,7 @@ function createEmptyDatabase(roster) {
     phoneLogs: [],
     outingLogs: [],
     overnightLogs: [],
+    deviceRecords: {},
   };
 }
 
@@ -2288,6 +2330,7 @@ function normalizePhoneLogs(logs) {
         startAt,
         endAt,
         durationSeconds,
+        reason: normalizeStatusChangeReason(log.reason),
       };
     })
     .filter(Boolean)
@@ -2295,7 +2338,7 @@ function normalizePhoneLogs(logs) {
     .slice(0, 200);
 }
 
-function createPhoneLog(name, startAt, endAt) {
+function createPhoneLog(name, startAt, endAt, reason = "") {
   const normalizedName = canonicalizeKnownPersonName(name || "");
   const normalizedStartAt = normalizePhoneTakenAt(startAt);
   const normalizedEndAt = normalizePhoneTakenAt(endAt);
@@ -2307,6 +2350,7 @@ function createPhoneLog(name, startAt, endAt) {
     startAt: normalizedStartAt,
     endAt: normalizedEndAt,
     durationSeconds,
+    reason: normalizeStatusChangeReason(reason),
   };
 }
 
@@ -2382,6 +2426,7 @@ function normalizeOutingLogs(logs) {
         startAt,
         endAt,
         durationSeconds,
+        reason: normalizeStatusChangeReason(log.reason),
       };
     })
     .filter(Boolean)
@@ -2389,7 +2434,7 @@ function normalizeOutingLogs(logs) {
     .slice(0, 200);
 }
 
-function createOutingLog(name, startAt, endAt) {
+function createOutingLog(name, startAt, endAt, reason = "") {
   const normalizedName = canonicalizeKnownPersonName(name || "");
   const normalizedStartAt = normalizeOutingStartedAt(startAt);
   const normalizedEndAt = normalizeOutingStartedAt(endAt);
@@ -2401,6 +2446,7 @@ function createOutingLog(name, startAt, endAt) {
     startAt: normalizedStartAt,
     endAt: normalizedEndAt,
     durationSeconds,
+    reason: normalizeStatusChangeReason(reason),
   };
 }
 
@@ -2471,6 +2517,263 @@ function createOvernightLog(name, targetDate, action, createdAt) {
 
 function createOvernightLogId(name, targetDate, action, createdAt) {
   return crypto.createHash("sha1").update(`overnight|${name}|${targetDate}|${action}|${createdAt}`).digest("hex").slice(0, 16);
+}
+
+function normalizeStatusChangeReason(value) {
+  return String(value || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+}
+
+function normalizeDeviceRecords(records) {
+  if (!records || typeof records !== "object" || Array.isArray(records)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [rawName, rawRecords] of Object.entries(records)) {
+    const name = canonicalizeKnownPersonName(rawName || "");
+    if (!name || !Array.isArray(rawRecords)) {
+      continue;
+    }
+
+    const seenDeviceIds = new Set();
+    const entries = rawRecords
+      .map(normalizeDeviceRecord)
+      .filter((entry) => {
+        if (!entry || seenDeviceIds.has(entry.deviceId)) {
+          return false;
+        }
+        seenDeviceIds.add(entry.deviceId);
+        return true;
+      })
+      .sort((left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt));
+
+    if (entries.length > 0) {
+      normalized[name] = entries;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeDeviceRecord(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    return null;
+  }
+
+  const deviceId = String(record.deviceId || record.id || "").trim();
+  const deviceName = normalizeDeviceDisplayName(record.deviceName || record.name || "");
+  const firstSeenAt = normalizePhoneTakenAt(record.firstSeenAt || record.createdAt || record.lastSeenAt);
+  const lastSeenAt = normalizePhoneTakenAt(record.lastSeenAt || record.updatedAt || record.firstSeenAt);
+  const ipAddress = normalizeIpAddress(record.ipAddress || record.ip || "");
+  const ipAddresses = normalizeDeviceIpAddresses(record.ipAddresses || record.ips, ipAddress);
+  if (!deviceId || !deviceName || !firstSeenAt || !lastSeenAt) {
+    return null;
+  }
+
+  return {
+    deviceId,
+    deviceName,
+    ipAddress: ipAddress || ipAddresses[0] || "",
+    ipAddresses,
+    firstSeenAt,
+    lastSeenAt,
+    accessCount: Math.max(1, Number.parseInt(record.accessCount || record.count || 1, 10) || 1),
+  };
+}
+
+function buildDeviceLogRows(deviceRecords, roster = []) {
+  const normalized = normalizeDeviceRecords(deviceRecords);
+  const rosterNames = new Set(roster.map((person) => person.name));
+
+  return Object.entries(normalized)
+    .flatMap(([name, records]) => {
+      if (rosterNames.size > 0 && !rosterNames.has(name)) {
+        return [];
+      }
+
+      return records.map((record) => ({
+        id: createDeviceRecordId(name, record.deviceId),
+        name,
+        deviceName: record.deviceName,
+        ipAddress: record.ipAddress,
+        ipAddresses: record.ipAddresses,
+        firstSeenAt: record.firstSeenAt,
+        lastSeenAt: record.lastSeenAt,
+        accessCount: record.accessCount,
+      }));
+    })
+    .sort((left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt));
+}
+
+function recordStudentLoginDevice(req, studentName, rawDevice) {
+  const name = canonicalizeKnownPersonName(studentName || "");
+  if (!name) {
+    return;
+  }
+
+  const nextRecord = createDeviceRecordFromRequest(req, rawDevice);
+  if (!nextRecord) {
+    return;
+  }
+
+  const database = readDatabase();
+  const deviceRecords = normalizeDeviceRecords(database.deviceRecords);
+  const records = Array.isArray(deviceRecords[name]) ? [...deviceRecords[name]] : [];
+  const existingIndex = records.findIndex((record) => record.deviceId === nextRecord.deviceId);
+
+  if (existingIndex >= 0) {
+    const existing = records[existingIndex];
+    records[existingIndex] = {
+      ...existing,
+      deviceName: existing.deviceName || nextRecord.deviceName,
+      ipAddress: nextRecord.ipAddress || existing.ipAddress || "",
+      ipAddresses: mergeDeviceIpAddresses(existing.ipAddresses, nextRecord.ipAddress),
+      lastSeenAt: nextRecord.lastSeenAt,
+      accessCount: Math.max(1, Number(existing.accessCount || 1)) + 1,
+    };
+  } else {
+    records.unshift(nextRecord);
+  }
+
+  deviceRecords[name] = records.sort((left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt));
+  database.deviceRecords = deviceRecords;
+  writeDatabase(database);
+}
+
+function createDeviceRecordFromRequest(req, rawDevice) {
+  const now = new Date().toISOString();
+  const device = rawDevice && typeof rawDevice === "object" && !Array.isArray(rawDevice) ? rawDevice : {};
+  const rawDeviceId = String(device.id || "").trim();
+  const userAgent = String(req.headers["user-agent"] || "").trim();
+  const acceptLanguage = String(req.headers["accept-language"] || "").trim();
+  const deviceIdSource = rawDeviceId || `${userAgent}|${acceptLanguage}`;
+  if (!deviceIdSource) {
+    return null;
+  }
+
+  const deviceId = `${DEVICE_RECORD_ID_PREFIX}${crypto.createHash("sha256").update(deviceIdSource).digest("hex").slice(0, 32)}`;
+  const deviceName = normalizeDeviceDisplayName(device.name) || deriveDeviceNameFromUserAgent(userAgent) || "알 수 없는 기기";
+  const ipAddress = getRequestIpAddress(req);
+
+  return {
+    deviceId,
+    deviceName,
+    ipAddress,
+    ipAddresses: ipAddress ? [ipAddress] : [],
+    firstSeenAt: now,
+    lastSeenAt: now,
+    accessCount: 1,
+  };
+}
+
+function getRequestIpAddress(req) {
+  const forwardedFor = getFirstHeaderValue(req.headers["x-forwarded-for"]);
+  const candidate =
+    forwardedFor ||
+    getFirstHeaderValue(req.headers["cf-connecting-ip"]) ||
+    getFirstHeaderValue(req.headers["x-real-ip"]) ||
+    req.socket?.remoteAddress ||
+    req.connection?.remoteAddress ||
+    "";
+  return normalizeIpAddress(candidate);
+}
+
+function getFirstHeaderValue(value) {
+  const source = Array.isArray(value) ? value[0] : value;
+  return String(source || "")
+    .split(",")[0]
+    .trim();
+}
+
+function normalizeIpAddress(value) {
+  let ipAddress = String(value || "")
+    .trim()
+    .replace(/^"+|"+$/g, "");
+  if (!ipAddress || ipAddress.toLowerCase() === "unknown") {
+    return "";
+  }
+
+  if (ipAddress.startsWith("::ffff:")) {
+    ipAddress = ipAddress.slice("::ffff:".length);
+  }
+
+  const ipv4WithPortMatch = /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(ipAddress);
+  if (ipv4WithPortMatch) {
+    ipAddress = ipv4WithPortMatch[1];
+  }
+
+  return ipAddress.slice(0, 64);
+}
+
+function normalizeDeviceIpAddresses(values, fallback = "") {
+  const sources = Array.isArray(values) ? values : [];
+  return [...sources, fallback]
+    .map(normalizeIpAddress)
+    .filter(Boolean)
+    .filter((ipAddress, index, array) => array.indexOf(ipAddress) === index)
+    .slice(0, 10);
+}
+
+function mergeDeviceIpAddresses(existingValues, nextIpAddress) {
+  const normalizedNext = normalizeIpAddress(nextIpAddress);
+  const existing = normalizeDeviceIpAddresses(existingValues);
+  return [normalizedNext, ...existing]
+    .filter(Boolean)
+    .filter((ipAddress, index, array) => array.indexOf(ipAddress) === index)
+    .slice(0, 10);
+}
+
+function normalizeDeviceDisplayName(value) {
+  return String(value || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function deriveDeviceNameFromUserAgent(userAgent) {
+  const source = String(userAgent || "");
+  if (!source) {
+    return "";
+  }
+
+  let platform = "";
+  if (/iPhone/i.test(source)) {
+    platform = "iPhone";
+  } else if (/iPad/i.test(source)) {
+    platform = "iPad";
+  } else if (/Android/i.test(source)) {
+    platform = "Android";
+  } else if (/Windows/i.test(source)) {
+    platform = "Windows";
+  } else if (/Mac OS X|Macintosh/i.test(source)) {
+    platform = "Mac";
+  } else if (/Linux/i.test(source)) {
+    platform = "Linux";
+  }
+
+  let browser = "";
+  if (/Edg\//i.test(source)) {
+    browser = "Edge";
+  } else if (/OPR\//i.test(source)) {
+    browser = "Opera";
+  } else if (/Chrome\//i.test(source) && !/Chromium/i.test(source)) {
+    browser = "Chrome";
+  } else if (/Safari\//i.test(source) && !/Chrome\//i.test(source)) {
+    browser = "Safari";
+  } else if (/Firefox\//i.test(source)) {
+    browser = "Firefox";
+  }
+
+  return [platform, browser].filter(Boolean).join(" / ");
+}
+
+function createDeviceRecordId(name, deviceId) {
+  return crypto.createHash("sha1").update(`device|${name}|${deviceId}`).digest("hex").slice(0, 16);
 }
 
 function resolveOutingStartedAt(record, outingActive) {
@@ -3006,11 +3309,12 @@ function computeStatus(intervals, overnights, now) {
   };
 }
 
-function resolveStatusWithManualOuting(status, outingActive, outingStartedAt) {
+function resolveStatusWithManualOuting(status, outingActive, outingStartedAt, outingReason = "") {
   if (!outingActive || status?.isOvernight) {
     return status;
   }
 
+  const reason = normalizeStatusChangeReason(outingReason) || "외출";
   return {
     isOut: true,
     isPhoneOnly: false,
@@ -3020,7 +3324,7 @@ function resolveStatusWithManualOuting(status, outingActive, outingStartedAt) {
       day: "",
       start: "",
       end: "",
-      reason: "외출",
+      reason,
       outing: "O",
       phone: "X",
       startedAt: outingStartedAt || null,
@@ -3336,6 +3640,7 @@ function isAttendanceExcludedPerson(person, now, roster = readRoster()) {
     ),
     normalizeOutingActive(userRecord?.outingActive),
     resolveOutingStartedAt(userRecord, normalizeOutingActive(userRecord?.outingActive)),
+    normalizeStatusChangeReason(userRecord?.outingReason),
   );
 
   return Boolean(status.isOut || status.isOvernight);

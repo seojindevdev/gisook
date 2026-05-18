@@ -1,13 +1,13 @@
-const CACHE_NAME = "gisook-pwa-v14";
+const CACHE_NAME = "gisook-pwa-v16";
 const APP_SHELL_URLS = [
   "/",
   "/index.html",
-  "/styles.css?v=13",
+  "/styles.css?v=16",
   "/app.js",
   "/attendance-mode.js",
   "/admin-fix.js",
   "/attendance-fix.js",
-  "/phone-mode.js?v=14",
+  "/phone-mode.js?v=16",
   "/parent-mode.js",
   "/pwa.js",
   "/manifest.webmanifest",

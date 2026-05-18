@@ -586,6 +586,14 @@ option.blocked-option {
   gap: 12px;
 }
 
+.status-card-grid.is-phone-disabled {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+body.phone-borrowing-disabled #settingsTab .table-wrap {
+  display: none;
+}
+
 .status-card {
   display: grid;
   gap: 8px;
@@ -2226,6 +2234,14 @@ option.blocked-option {
 
   #adminTab td:nth-child(5)::before {
     content: "관리";
+  }
+
+  body.phone-borrowing-disabled #adminTab td:nth-child(4)::before {
+    content: "관리";
+  }
+
+  body.phone-borrowing-disabled #adminTab td:nth-child(5)::before {
+    content: none;
   }
 
   #adminTab .empty-row::before {

@@ -1,5 +1,6 @@
 const STATUS_TAB_LABEL = "\uc0c1\ud0dc";
 const PHONE_PANEL_TITLE = "\uc0c1\ud0dc";
+const PHONE_BORROWING_ENABLED = false;
 const PHONE_SUBMITTED_LABEL = "\ud3f0 \ub0c8\uc74c";
 const PHONE_TAKEN_LABEL = "\ud3f0 \uac00\uc838\uac10";
 const PHONE_BORROW_ACTION_LABEL = "\ud3f0 \ube4c\ub9ac\uae30";
@@ -58,6 +59,7 @@ const DEVICE_LOG_UNKNOWN_NAME = "\uc54c \uc218 \uc5c6\ub294 \uae30\uae30";
 const OFFLINE_CHANGE_TAB_LABEL = "\uc624\ud504\ub77c\uc778 \ubcc0\uacbd";
 const WARDEN_ONLY_LABEL = "\uc0ac\uac10 \uc804\uc6a9";
 const OFFLINE_CHANGE_DESCRIPTION = "\ud559\uc0dd\uc744 \uac80\uc0c9\ud574 \ud3f0/\uc678\ucd9c \uc0c1\ud0dc\ub97c \uc5ec\uae30\uc11c \ubc14\ub85c \ubc14\uafc0 \uc218 \uc788\uc2b5\ub2c8\ub2e4.";
+const OFFLINE_CHANGE_OUTING_DESCRIPTION = "\ud559\uc0dd\uc744 \uac80\uc0c9\ud574 \uc678\ucd9c \uc0c1\ud0dc\ub97c \uc5ec\uae30\uc11c \ubc14\ub85c \ubc14\uafc0 \uc218 \uc788\uc2b5\ub2c8\ub2e4.";
 const OFFLINE_SEARCH_EMPTY_LABEL = "\uac80\uc0c9\ud560 \ud559\uc0dd \uc774\ub984\uc744 \uc785\ub825\ud558\uc138\uc694.";
 const OFFLINE_RESULT_COUNT_LABEL = "\uac80\uc0c9 \uacb0\uacfc";
 const PHONE_LOG_EMPTY_LABEL = "\uc544\uc9c1 \ub85c\uadf8 \uc5c6\uc74c";
@@ -136,6 +138,8 @@ setupProtectedApiPinFetch();
 clearLegacyProtectedTabPinStorage();
 
 function setupPhoneModeUi() {
+  document.body?.classList.toggle("phone-borrowing-disabled", !PHONE_BORROWING_ENABLED);
+
   const settingsTabButton = document.querySelector("#settingsTabButton");
   const overnightTabButton = document.querySelector("#overnightTabButton");
   const tabs = document.querySelector(".tabs");
@@ -213,7 +217,7 @@ function setupPhoneModeUi() {
             </div>
             <div class="history-log-tabs">
               <button class="history-log-tab-button is-active" type="button" data-history-log-tab="outing">${OUTING_LOG_TAB_LABEL}</button>
-              <button class="history-log-tab-button" type="button" data-history-log-tab="phone">${PHONE_RETURN_LOG_TAB_LABEL}</button>
+              ${PHONE_BORROWING_ENABLED ? '<button class="history-log-tab-button" type="button" data-history-log-tab="phone">' + PHONE_RETURN_LOG_TAB_LABEL + '</button>' : ""}
               <button class="history-log-tab-button" type="button" data-history-log-tab="overnight">${OVERNIGHT_LOG_TAB_LABEL}</button>
               <button class="history-log-tab-button" type="button" data-history-log-tab="device">${DEVICE_LOG_TAB_LABEL}</button>
             </div>
@@ -252,7 +256,7 @@ function setupPhoneModeUi() {
               <div>
                 <div class="phone-log-eyebrow">${WARDEN_ONLY_LABEL}</div>
                 <div class="phone-log-title">${OFFLINE_CHANGE_TAB_LABEL}</div>
-                <div class="offline-change-description">${OFFLINE_CHANGE_DESCRIPTION}</div>
+                <div class="offline-change-description">${PHONE_BORROWING_ENABLED ? OFFLINE_CHANGE_DESCRIPTION : OFFLINE_CHANGE_OUTING_DESCRIPTION}</div>
               </div>
               <div id="offlineStudentCount" class="phone-log-count"></div>
             </div>
@@ -271,7 +275,9 @@ function setupPhoneModeUi() {
 
   ensureDashboardStatusFilters();
   ensureDashboardUtilityPanel();
-  ensurePhoneConfiscationModal();
+  if (PHONE_BORROWING_ENABLED) {
+    ensurePhoneConfiscationModal();
+  }
   ensureStatusReasonModal();
   ensureProtectedTabPinModal();
   settingsTab?.querySelector("#dayTabs")?.classList.add("hidden");
@@ -286,14 +292,14 @@ function setupPhoneModeUi() {
         <div id="phonePanel" class="phone-panel status-panel">
           <div class="phone-panel-title">${PHONE_PANEL_TITLE}</div>
           <div id="phonePersonLabel" class="phone-person-label"></div>
-          <div class="status-card-grid">
-            <div class="status-card">
-              <div class="status-card-title">${PHONE_STATUS_TITLE}</div>
-              <div id="phoneTimerLabel" class="phone-timer-label"></div>
-              <div class="phone-toggle">
-                <button id="phoneToggleButton" class="phone-toggle-button" type="button" data-phone-toggle="true"></button>
-              </div>
-            </div>
+          <div class="status-card-grid${PHONE_BORROWING_ENABLED ? "" : " is-phone-disabled"}">
+            ${
+              PHONE_BORROWING_ENABLED
+                ? '<div class="status-card"><div class="status-card-title">' +
+                  PHONE_STATUS_TITLE +
+                  '</div><div id="phoneTimerLabel" class="phone-timer-label"></div><div class="phone-toggle"><button id="phoneToggleButton" class="phone-toggle-button" type="button" data-phone-toggle="true"></button></div></div>'
+                : ""
+            }
             <div class="status-card">
               <div class="status-card-title">${OUTING_STATUS_TITLE}</div>
               <div id="outingTimerLabel" class="phone-timer-label"></div>
@@ -332,6 +338,11 @@ function ensureDashboardStatusFilters() {
   }
 
   let phoneFilterButton = dashboardFilters.querySelector('[data-dashboard-filter="PHONE"]');
+  if (!PHONE_BORROWING_ENABLED) {
+    phoneFilterButton?.classList.add("hidden");
+    return;
+  }
+
   if (!phoneFilterButton) {
     phoneFilterButton = document.createElement("button");
     phoneFilterButton.className = "dashboard-filter-button";
@@ -943,7 +954,7 @@ function getOutingTimerText(outingStartedAt, outingActive = false) {
 function refreshPhoneTimers() {
   renderPhonePanel();
   renderOfflineChangePanel();
-  if (activeHistoryLogType === "phone" || activeHistoryLogType === "outing") {
+  if ((PHONE_BORROWING_ENABLED && activeHistoryLogType === "phone") || activeHistoryLogType === "outing") {
     renderPhoneLogs();
   }
 
@@ -1347,6 +1358,9 @@ function getActiveStatusLogs(type) {
   if (type !== "phone" && type !== "outing") {
     return [];
   }
+  if (!PHONE_BORROWING_ENABLED && type === "phone") {
+    return [];
+  }
 
   const nowIso = new Date().toISOString();
   return getDashboardUsers()
@@ -1368,6 +1382,10 @@ function compareHistoryLogs(left, right) {
 }
 
 function getHistoryLogsForActiveType() {
+  if (!PHONE_BORROWING_ENABLED && activeHistoryLogType === "phone") {
+    activeHistoryLogType = "outing";
+  }
+
   const storedLogs =
     activeHistoryLogType === "device"
       ? Array.isArray(state.deviceLogs)
@@ -1421,7 +1439,10 @@ function updatePhoneLogFilterButtons() {
     button.classList.toggle("is-active", String(button.dataset.phoneLogGrade || "ALL") === phoneLogGradeFilter);
   });
   document.querySelectorAll("[data-history-log-tab]").forEach((button) => {
-    button.classList.toggle("is-active", String(button.dataset.historyLogTab || "outing") === activeHistoryLogType);
+    const historyLogType = String(button.dataset.historyLogTab || "outing");
+    const hidden = !PHONE_BORROWING_ENABLED && historyLogType === "phone";
+    button.classList.toggle("hidden", hidden);
+    button.classList.toggle("is-active", !hidden && historyLogType === activeHistoryLogType);
   });
   document.querySelectorAll("[data-phone-log-date]").forEach((button) => {
     button.classList.toggle("is-active", String(button.dataset.phoneLogDate || "ALL") === phoneLogDateFilter);
@@ -1439,13 +1460,20 @@ function handlePhoneLogSearchInput(event) {
 function handlePhoneLogFilterClick(event) {
   const confiscationTarget = event.target.closest("[data-phone-confiscation-name]");
   if (confiscationTarget) {
+    if (!PHONE_BORROWING_ENABLED) {
+      return;
+    }
     openPhoneConfiscationModal(confiscationTarget.dataset.phoneConfiscationName);
     return;
   }
 
   const historyTabButton = event.target.closest("[data-history-log-tab]");
   if (historyTabButton) {
-    activeHistoryLogType = String(historyTabButton.dataset.historyLogTab || "outing");
+    const nextHistoryLogType = String(historyTabButton.dataset.historyLogTab || "outing");
+    if (!PHONE_BORROWING_ENABLED && nextHistoryLogType === "phone") {
+      return;
+    }
+    activeHistoryLogType = nextHistoryLogType;
     renderPhoneLogs();
     return;
   }
@@ -1547,7 +1575,7 @@ function renderPhoneLogs() {
       const rangeText = log.active ? `${start}${FROM_LABEL} ${end}` : `${start}${FROM_LABEL} ${end}${TO_LABEL}`;
       const duration = escapeHtml(formatPhoneLogDuration(log.durationSeconds));
       const reason = escapeHtml(log.reason || "");
-      const isPhoneLog = activeHistoryLogType === "phone";
+      const isPhoneLog = PHONE_BORROWING_ENABLED && activeHistoryLogType === "phone";
       const activeClass = log.active ? " is-active-log" : "";
       const activeBadge = log.active ? `<span class="phone-log-live-badge">${ACTIVE_LOG_END_LABEL}</span>` : "";
       const cardOpen = isPhoneLog
@@ -1979,6 +2007,12 @@ function renderOfflineChangePanel() {
       const outingDisabled = status.isOvernight ? " disabled" : "";
       const phoneDisabledClass = phoneDisabled ? " is-disabled" : "";
       const outingDisabledClass = outingDisabled ? " is-disabled" : "";
+      const statusLine = PHONE_BORROWING_ENABLED
+        ? `${PHONE_STATUS_TITLE}: ${escapeHtml(phoneTimer)} / ${OUTING_STATUS_TITLE}: ${escapeHtml(outingTimer)}`
+        : `${OUTING_STATUS_TITLE}: ${escapeHtml(outingTimer)}`;
+      const phoneActionButton = PHONE_BORROWING_ENABLED
+        ? `<button class="offline-status-button ${phoneClass}${phoneDisabledClass}" type="button" data-offline-phone-name="${safeName}"${phoneDisabled}>${phoneActionLabel}</button>`
+        : "";
 
       return `
         <article class="offline-student-card">
@@ -1988,10 +2022,10 @@ function renderOfflineChangePanel() {
               ${grade}
               ${room}
             </div>
-            <div class="offline-student-status-line">${PHONE_STATUS_TITLE}: ${escapeHtml(phoneTimer)} / ${OUTING_STATUS_TITLE}: ${escapeHtml(outingTimer)}</div>
+            <div class="offline-student-status-line">${statusLine}</div>
           </div>
           <div class="offline-status-actions">
-            <button class="offline-status-button ${phoneClass}${phoneDisabledClass}" type="button" data-offline-phone-name="${safeName}"${phoneDisabled}>${phoneActionLabel}</button>
+            ${phoneActionButton}
             <button class="offline-status-button ${outingClass}${outingDisabledClass}" type="button" data-offline-outing-name="${safeName}"${outingDisabled}>${outingActionLabel}</button>
           </div>
         </article>
@@ -2009,7 +2043,7 @@ function handleOfflineChangeInput(event) {
 }
 
 async function handleOfflineChangeClick(event) {
-  const phoneButton = event.target.closest("[data-offline-phone-name]");
+  const phoneButton = PHONE_BORROWING_ENABLED ? event.target.closest("[data-offline-phone-name]") : null;
   const outingButton = event.target.closest("[data-offline-outing-name]");
   if (!phoneButton && !outingButton) {
     return;
@@ -2234,6 +2268,10 @@ function canChangeOutingForName(name) {
 }
 
 function canChangePhoneForName(name, nextPhoneSubmitted = null) {
+  if (!PHONE_BORROWING_ENABLED) {
+    return false;
+  }
+
   if (!canChangeOutingForName(name)) {
     return false;
   }
@@ -2248,6 +2286,10 @@ function canChangePhoneForName(name, nextPhoneSubmitted = null) {
 }
 
 async function savePhoneStatusForName(name, phoneSubmitted, reason = "") {
+  if (!PHONE_BORROWING_ENABLED) {
+    return false;
+  }
+
   const targetName = String(name || "").trim();
   if (!targetName) {
     return false;
@@ -2324,6 +2366,9 @@ async function saveOutingStatusForName(name, outingActive, reason = "") {
 async function handlePhoneToggleClick(event) {
   const button = event.target.closest("[data-phone-toggle]");
   if (!button) {
+    return;
+  }
+  if (!PHONE_BORROWING_ENABLED) {
     return;
   }
 
@@ -2486,6 +2531,10 @@ function validateStatusReasonModalInput() {
 }
 
 function requestStatusChangeReason(type) {
+  if (!PHONE_BORROWING_ENABLED && type === "phone") {
+    return Promise.resolve(null);
+  }
+
   ensureStatusReasonModal();
   if (statusReasonModalResolver) {
     closeStatusReasonModal(null);
@@ -2831,6 +2880,9 @@ function switchTab(tabName) {
 function updateDashboardFilterButtons() {
   ensureDashboardStatusFilters();
   ensureDashboardUtilityPanel();
+  if (!PHONE_BORROWING_ENABLED && state.dashboardFilter === "PHONE") {
+    state.dashboardFilter = "ALL";
+  }
   if (state.dashboardFilter === "OVERNIGHT") {
     state.dashboardFilter = "ALL";
   }
@@ -2840,7 +2892,10 @@ function updateDashboardFilterButtons() {
 
   elements.dashboardFilters.querySelectorAll("[data-dashboard-filter]").forEach((button) => {
     const filter = String(button.dataset.dashboardFilter || "");
-    const hidden = filter === "OVERNIGHT" || (Boolean(state.dashboardAttendanceMode) && (filter === "PHONE" || filter === "OUT"));
+    const hidden =
+      filter === "OVERNIGHT" ||
+      (!PHONE_BORROWING_ENABLED && filter === "PHONE") ||
+      (Boolean(state.dashboardAttendanceMode) && (filter === "PHONE" || filter === "OUT"));
     button.classList.toggle("hidden", hidden);
     button.classList.toggle("is-active", !hidden && filter === state.dashboardFilter);
   });
@@ -2869,6 +2924,9 @@ function handleDashboardFilterClick(event) {
   }
 
   const nextFilter = button.dataset.dashboardFilter || "ALL";
+  if (!PHONE_BORROWING_ENABLED && nextFilter === "PHONE") {
+    return;
+  }
   if (state.dashboardAttendanceMode && (nextFilter === "PHONE" || nextFilter === "OUT" || nextFilter === "OVERNIGHT")) {
     return;
   }
@@ -2897,6 +2955,9 @@ function matchesDashboardFilter(occupant) {
   }
 
   if (state.dashboardFilter === "PHONE") {
+    if (!PHONE_BORROWING_ENABLED) {
+      return false;
+    }
     return occupant.phoneSubmitted === false;
   }
 
@@ -2933,6 +2994,9 @@ async function handleDashboardAttendanceModeChange() {
   state.dashboardAttendanceMode = nextMode;
   state.attendanceModeActive = nextMode;
   localStorage.setItem("dashboardAttendanceMode", nextMode ? "1" : "0");
+  if (!PHONE_BORROWING_ENABLED && state.dashboardFilter === "PHONE") {
+    state.dashboardFilter = "ALL";
+  }
   if (state.dashboardAttendanceMode && ["PHONE", "OUT", "OVERNIGHT"].includes(state.dashboardFilter)) {
     state.dashboardFilter = "ALL";
   }
@@ -3031,12 +3095,11 @@ function renderDashboardStatusSummary() {
   }
 
   const users = getDashboardAllUsers();
-  const phoneUsers = users.filter((user) => user.phoneSubmitted === false);
   const outingUsers = users.filter((user) => user.isOut || user.outingActive);
   const overnightUsers = users.filter((user) => user.isOvernight);
   const attendanceUncheckedUsers = users.filter((user) => !isAttendanceExcludedForOccupant(user) && !user.attendanceChecked);
   const cards = [
-    [DASHBOARD_STATUS_PHONE_LABEL, phoneUsers],
+    ...(PHONE_BORROWING_ENABLED ? [[DASHBOARD_STATUS_PHONE_LABEL, users.filter((user) => user.phoneSubmitted === false)]] : []),
     [DASHBOARD_STATUS_OUTING_LABEL, outingUsers],
     [DASHBOARD_STATUS_OVERNIGHT_LABEL, overnightUsers],
     [DASHBOARD_STATUS_ATTENDANCE_LABEL, attendanceUncheckedUsers],
@@ -3217,7 +3280,7 @@ function renderDashboardReasonPopover(occupant, phoneSubmitted) {
   if (occupant.isOut || occupant.outingActive) {
     rows.push([OUTING_STATUS_TITLE, occupant.outingReason || occupant.currentInterval?.reason]);
   }
-  if (!phoneSubmitted) {
+  if (PHONE_BORROWING_ENABLED && !phoneSubmitted) {
     rows.push([PHONE_BORROW_REASON_TITLE, occupant.phoneReason]);
   }
   if (rows.length === 0) {
@@ -3246,9 +3309,11 @@ function renderRoomSlot(occupant) {
         : "attendance-out"
       : occupant.isOut
         ? "out"
-        : occupant.phoneSubmitted
-          ? "phone-submitted"
-          : "phone-taken";
+        : PHONE_BORROWING_ENABLED
+          ? occupant.phoneSubmitted
+            ? "phone-submitted"
+            : "phone-taken"
+          : "in";
   const nameLabel = occupant.empty ? "" : occupant.name;
   const nameClass = occupant.empty ? `slot-name ${statusClass} blank` : `slot-name ${statusClass}`;
   const gradeLabel = occupant.empty || !Number.isInteger(occupant.grade) ? "" : String(occupant.grade);
@@ -3259,13 +3324,14 @@ function renderRoomSlot(occupant) {
   const phoneLabel = phoneSubmitted ? PHONE_SUBMITTED_LABEL : PHONE_TAKEN_LABEL;
   const outingLabel = occupant.isOut ? ` / ${OUTING_ACTIVE_LABEL}` : "";
   const timerLabel = getPhoneTimerText(phoneTakenAt, phoneSubmitted);
+  const titleText = PHONE_BORROWING_ENABLED ? `${phoneLabel} ${timerLabel}${outingLabel}` : outingLabel.replace(" / ", "");
   const canToggleAttendance = canToggleAttendanceForOccupant(occupant);
   const focusAttribute = popover ? ' tabindex="0"' : "";
   const nameMarkup = occupant.empty
     ? `<div class="${nameClass}"></div>`
     : canToggleAttendance
       ? `<button type="button" class="${nameClass} slot-name-button" data-attendance-name="${escapeHtml(occupant.name)}">${escapeHtml(nameLabel)}</button>`
-      : `<div class="${nameClass}"${focusAttribute} title="${escapeHtml(`${phoneLabel} ${timerLabel}${outingLabel}`)}">${escapeHtml(nameLabel)}</div>`;
+      : `<div class="${nameClass}"${focusAttribute} title="${escapeHtml(titleText)}">${escapeHtml(nameLabel)}</div>`;
 
   return `
     <div class="room-slot">

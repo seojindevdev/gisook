@@ -8,8 +8,13 @@ const adminFixState = {
   dashboardLoaded: false,
 };
 
+const ADMIN_PHONE_BORROWING_ENABLED = false;
 const adminProfileSaveTimers = new Map();
 const adminConfiscationSaveTimers = new Map();
+
+function getAdminTableColumnCount() {
+  return ADMIN_PHONE_BORROWING_ENABLED ? 5 : 4;
+}
 
 function normalizeAdminFixRoom(room) {
   const normalizedRoom = String(room || "").trim();
@@ -96,7 +101,7 @@ function ensureAdminTableHeader() {
     <th>이름</th>
     <th>호실</th>
     <th>학년</th>
-    <th>핸드폰 압수</th>
+    ${ADMIN_PHONE_BORROWING_ENABLED ? "<th>핸드폰 압수</th>" : ""}
     <th>관리</th>
   `;
 }
@@ -253,6 +258,10 @@ function renderAdminConfiscationEndPreviewForName(name, days) {
 }
 
 function updateAdminConfiscationEndPreview(row) {
+  if (!ADMIN_PHONE_BORROWING_ENABLED) {
+    return;
+  }
+
   const input = row?.querySelector("[data-admin-confiscation-days]");
   const preview = row?.querySelector("[data-admin-confiscation-preview]");
   if (!input || !preview) {
@@ -315,6 +324,10 @@ function clearQueuedAdminConfiscationSave(name) {
 }
 
 function queueAdminConfiscationSave(row) {
+  if (!ADMIN_PHONE_BORROWING_ENABLED) {
+    return;
+  }
+
   const name = String(row?.dataset.adminName || "").trim();
   const days = readAdminConfiscationDays(row);
   if (!name || days === null) {
@@ -330,6 +343,10 @@ function queueAdminConfiscationSave(row) {
 }
 
 function flushAdminConfiscationSave(row) {
+  if (!ADMIN_PHONE_BORROWING_ENABLED) {
+    return;
+  }
+
   const name = String(row?.dataset.adminName || "").trim();
   const days = readAdminConfiscationDays(row);
   if (!name || days === null) {
@@ -341,6 +358,10 @@ function flushAdminConfiscationSave(row) {
 }
 
 async function requestAdminDashboardSnapshot(force = false) {
+  if (!ADMIN_PHONE_BORROWING_ENABLED) {
+    return;
+  }
+
   if (state.userRole !== "warden" || !state.authenticated || adminFixState.dashboardLoading) {
     return;
   }
@@ -408,6 +429,8 @@ function syncAdminDraftStudentsFromDom() {
 }
 
 function renderAdminDraftStudentRow(draft) {
+  const confiscationCell = ADMIN_PHONE_BORROWING_ENABLED ? '<td><span class="admin-confiscation-muted">추가 후 설정</span></td>' : "";
+
   return `
     <tr data-admin-draft-id="${escapeHtml(draft.id)}" class="admin-draft-row">
       <td><input type="text" class="text-input" data-admin-draft-name placeholder="이름" value="${escapeHtml(draft.name || "")}" /></td>
@@ -421,7 +444,7 @@ function renderAdminDraftStudentRow(draft) {
           ${buildAdminGradeOptions(Number(draft.grade || 1))}
         </select>
       </td>
-      <td><span class="admin-confiscation-muted">추가 후 설정</span></td>
+      ${confiscationCell}
       <td>
         <div class="admin-cell-actions">
           <button type="button" data-admin-draft-save="${escapeHtml(draft.id)}">저장</button>
@@ -461,6 +484,32 @@ function renderAdminStudentRows() {
       const confiscationEndPreviewClass = confiscationEndPreview
         ? "admin-confiscation-end-preview"
         : "admin-confiscation-end-preview hidden";
+      const confiscationCell = ADMIN_PHONE_BORROWING_ENABLED
+        ? `
+          <td>
+            <div class="admin-confiscation-control">
+              <div class="admin-confiscation-actions">
+                <div class="admin-confiscation-duration-wrap">
+                  <label class="admin-confiscation-days-field">
+                    <input
+                      type="number"
+                      class="text-input admin-confiscation-days-input"
+                      data-admin-confiscation-days="${escapeHtml(person.name)}"
+                      min="0"
+                      max="365"
+                      step="1"
+                      value="${confiscationDays}"
+                      aria-label="${escapeHtml(person.name)} 핸드폰 압수 기간"
+                    />
+                    <span class="admin-confiscation-days-unit">일</span>
+                  </label>
+                  <span class="${confiscationEndPreviewClass}" data-admin-confiscation-preview>${confiscationEndPreview}</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        `
+        : "";
       return `
         <tr data-admin-name="${escapeHtml(person.name)}">
           <td>
@@ -484,6 +533,7 @@ function renderAdminStudentRows() {
               ${buildAdminGradeOptions(Number(person.grade || 1))}
             </select>
           </td>
+          ${confiscationCell}
           <td><button type="button" data-admin-delete="${escapeHtml(person.name)}">삭제</button></td>
         </tr>
       `;
@@ -494,7 +544,7 @@ function renderAdminStudentRows() {
     const emptyMessage = hasActiveAdminFilters() ? "조건에 맞는 학생이 없습니다." : "학생 데이터가 없습니다.";
     elements.adminStudentRows.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-row">${escapeHtml(emptyMessage)}</td>
+        <td colspan="${getAdminTableColumnCount()}" class="empty-row">${escapeHtml(emptyMessage)}</td>
       </tr>
     `;
     return;
@@ -701,6 +751,32 @@ function renderAdminStudentRows() {
       const confiscationEndPreviewClass = confiscationEndPreview
         ? "admin-confiscation-end-preview"
         : "admin-confiscation-end-preview hidden";
+      const confiscationCell = ADMIN_PHONE_BORROWING_ENABLED
+        ? `
+          <td>
+            <div class="admin-confiscation-control">
+              <div class="admin-confiscation-actions">
+                <div class="admin-confiscation-duration-wrap">
+                  <label class="admin-confiscation-days-field">
+                    <input
+                      type="number"
+                      class="text-input admin-confiscation-days-input"
+                      data-admin-confiscation-days="${escapeHtml(person.name)}"
+                      min="0"
+                      max="365"
+                      step="1"
+                      value="${confiscationDays}"
+                      aria-label="${escapeHtml(person.name)} 핸드폰 압수 기간"
+                    />
+                    <span class="admin-confiscation-days-unit">일</span>
+                  </label>
+                  <span class="${confiscationEndPreviewClass}" data-admin-confiscation-preview>${confiscationEndPreview}</span>
+                </div>
+              </div>
+            </div>
+          </td>
+        `
+        : "";
       return `
         <tr data-admin-name="${escapeHtml(person.name)}">
           <td>
@@ -724,28 +800,7 @@ function renderAdminStudentRows() {
               ${buildAdminGradeOptions(Number(person.grade || 1))}
             </select>
           </td>
-          <td>
-            <div class="admin-confiscation-control">
-              <div class="admin-confiscation-actions">
-                <div class="admin-confiscation-duration-wrap">
-                  <label class="admin-confiscation-days-field">
-                    <input
-                      type="number"
-                      class="text-input admin-confiscation-days-input"
-                      data-admin-confiscation-days="${escapeHtml(person.name)}"
-                      min="0"
-                      max="365"
-                      step="1"
-                      value="${confiscationDays}"
-                      aria-label="${escapeHtml(person.name)} 핸드폰 압수 기간"
-                    />
-                    <span class="admin-confiscation-days-unit">일</span>
-                  </label>
-                  <span class="${confiscationEndPreviewClass}" data-admin-confiscation-preview>${confiscationEndPreview}</span>
-                </div>
-              </div>
-            </div>
-          </td>
+          ${confiscationCell}
           <td>
             <button type="button" class="admin-delete-button" data-admin-delete="${escapeHtml(person.name)}">삭제</button>
           </td>
@@ -758,7 +813,7 @@ function renderAdminStudentRows() {
     const emptyMessage = hasActiveAdminFilters() ? "조건에 맞는 학생이 없습니다." : "학생 데이터가 없습니다.";
     elements.adminStudentRows.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-row">${escapeHtml(emptyMessage)}</td>
+        <td colspan="${getAdminTableColumnCount()}" class="empty-row">${escapeHtml(emptyMessage)}</td>
       </tr>
     `;
     return;
@@ -823,6 +878,10 @@ function handleAdminStudentAction(event) {
 
 async function saveAdminPhoneConfiscation(name, clear = false, options = {}) {
   const { silent = false } = options;
+  if (!ADMIN_PHONE_BORROWING_ENABLED) {
+    return;
+  }
+
   if (state.userRole !== "warden" || !state.authenticated) {
     setMessage("사감 모드에서만 사용할 수 있습니다.", true);
     return;
